@@ -35,7 +35,7 @@ _baseline_ is the list of existing findings that are accepted
   `CODEOWNERS` file in any directory (`**/CODEOWNERS`, which covers the root,
   `.github/` and `docs/`). The two workflow names are defaults:
   `unrepresentable.yml` is the consumer-side name of the workflow that runs the
-  tool and `policy.yml` is a workflow of this repository. A project that names
+  tool and `policy.yml` is this repository's merge policy. A project that names
   its CI workflow otherwise still has that file under `.github/**` as a judge
   path; list other CI files under `judge`.
 - A path is a judge or code path if the config at the base of the range or the

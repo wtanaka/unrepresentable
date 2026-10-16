@@ -1,0 +1,7 @@
+# Public differential corpus, pinned by sha256 of the downloaded archive.
+# Format: <https url> <sha256> <name>
+# The base binary and the head binary both run over each corpus; any finding
+# the base binary reports that the head binary does not is a LOST_FINDING.
+# Changing this file needs human approval (policy/** is protected).
+https://static.crates.io/crates/syn/syn-2.0.119.crate 872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297 syn-2.0.119
+https://static.crates.io/crates/proc-macro2/proc-macro2-1.0.107.crate 985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9 proc-macro2-1.0.107

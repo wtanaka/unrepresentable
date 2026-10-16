@@ -1,0 +1,11 @@
+# Third-party tools installed in CI from release archives, pinned by version and sha256.
+# Format: <name> <version> <url> <sha256>
+zizmor 1.30.1 https://github.com/zizmorcore/zizmor/releases/download/v1.30.1/zizmor-x86_64-unknown-linux-gnu.tar.gz e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a
+cargo-mutants 27.1.0 https://github.com/sourcefrog/cargo-mutants/releases/download/v27.1.0/cargo-mutants-x86_64-unknown-linux-gnu.tar.gz dfe6dc37d0342c891d2829b5a695aa57c2d0edecef7e7d0399a30cc6e206411e
+# cargo-deny 0.20.2 (released 2026-07-09), static musl build. The sha256 is the
+# one GitHub publishes for the asset (the release's cargo-deny-0.20.2-x86_64-
+# unknown-linux-musl.tar.gz.sha256 file and the asset digest in the releases API
+# agree). It was not recomputed from a downloaded archive when it was recorded;
+# `install-tool` checks the real archive against it on every install, so a
+# mismatch fails the step.
+cargo-deny 0.20.2 https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz 9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f

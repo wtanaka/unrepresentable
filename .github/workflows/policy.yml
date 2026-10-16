@@ -1,0 +1,907 @@
+# The one workflow for pull requests and for the default branch.
+#
+# Pull requests (pull_request_target): merge policy. It runs from the DEFAULT
+# BRANCH; the PR is data. Event data reaches steps only as env (PR number and
+# commit hashes), and every script validates it (^[0-9]+$ and ^[0-9a-f]{40}$)
+# before use. No caches here: nothing a PR writes is ever restored by a
+# base-code job. The policy tool and the base `unrepresentable` binary are
+# built once, from the base commit, in `build-base`, and handed to the other
+# jobs as artifacts whose sha256 is checked before use.
+#
+# Anything that touches head code or head data with cargo in reach (a build,
+# the tests, the mutation tests, the base binary's `cargo clippy` over the head,
+# the head binary) runs as an unprivileged user with no network and no token,
+# never as the runner user (policy/sandbox.sh, offline.sh, stage-sandbox.sh).
+# The hidden corpus, the one secret a pull request job reads, is used only by
+# `differential-hidden`, which never fetches or reads the head.
+#
+# Pushes to the default branch and manual runs (push, workflow_dispatch): the
+# ordinary checks, run on the pushed tree, which is trusted. They are split into
+# parallel jobs, and `skip-check` lets them be skipped when the same git tree
+# already passed as a pull request head. Every job is gated by
+# github.event_name, so each event runs only its own jobs.
+#
+# The check list itself is ci/checks.sh; this file only chooses where each
+# check runs. Release, review, sweep and settings audit stay in their own files
+# because their triggers differ (see ci/README.md).
+name: policy-pr
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request_target' && format('policy-{0}', github.event.pull_request.number) || format('ci-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+
+env:
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+  BASE_SHA: ${{ github.sha }}
+  RUSTUP_MAX_RETRIES: "3"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Pull requests. Base code decides; head code and head data are handled only
+  # in self-lint, head-checks, build-head, mutants, differential and
+  # differential-hidden, as an unprivileged user with no network (see below).
+  # Only differential-hidden has an environment, and it never reads the head.
+  # ---------------------------------------------------------------------------
+
+  # The only job that compiles base code in this workflow. Everything it
+  # uploads is checked against the sha256 it computes here.
+  build-base:
+    name: build-base
+    if: ${{ github.event_name == 'pull_request_target' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      policy-sha256: ${{ steps.hash.outputs.policy }}
+      tool-sha256: ${{ steps.hash.outputs.tool }}
+    steps:
+      - name: Check out the base commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require the base commit
+        run: |
+          set -eu
+          test "$(git -C base rev-parse HEAD)" = "$BASE_SHA"
+      - name: Build the policy tool and the base binary (base code, base dir)
+        working-directory: base
+        run: sh ci/cargo.sh build -p unrepresentable-policy -p unrepresentable
+      - name: Hash the binaries
+        id: hash
+        working-directory: base/target/release
+        run: |
+          set -eu
+          echo "policy=$(sha256sum unrepresentable-policy | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "tool=$(sha256sum unrepresentable | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: base-policy
+          path: base/target/release/unrepresentable-policy
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: base-tool
+          path: base/target/release/unrepresentable
+          if-no-files-found: error
+          retention-days: 1
+
+  classify:
+    name: classify
+    needs: [build-base]
+    if: ${{ github.event_name == 'pull_request_target' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      POLICY_SHA256: ${{ needs.build-base.outputs.policy-sha256 }}
+    steps:
+      - name: Check out base (default branch code)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-policy
+          path: base/target/release
+      - name: Verify the policy tool (sha256 from build-base)
+        run: |
+          set -eu
+          cd base/target/release
+          printf '%s  unrepresentable-policy\n' "$POLICY_SHA256" | sha256sum -c -
+          chmod 755 unrepresentable-policy
+      - name: Fetch head as files only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: base/target/release/unrepresentable-policy fetch-head head base
+      - name: Install pinned zizmor
+        run: base/target/release/unrepresentable-policy install-tool base/policy/tools.lock zizmor "$RUNNER_TEMP/bin"
+      - name: Audit head workflows (data only)
+        run: |
+          if [ -d head/.github ]; then
+            "$RUNNER_TEMP/bin/zizmor" --config base/policy/zizmor.yml --offline --format json head/.github > "$RUNNER_TEMP/zizmor.json" || true
+          else
+            echo '[]' > "$RUNNER_TEMP/zizmor.json"
+          fi
+      - name: Classify changed paths
+        run: |
+          mkdir -p out
+          base/target/release/unrepresentable-policy classify --head-dir head --base "$BASE_SHA" --head "$HEAD_SHA" \
+            --zizmor-json "$RUNNER_TEMP/zizmor.json" --out out/result.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: result-classify
+          path: out/result.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  # Head code runs in head-checks, build-head, mutants and (as the sandboxed
+  # binary under test) differential and differential-hidden. self-lint and
+  # differential also run a base binary on head data, and a base binary that
+  # runs cargo runs whatever the head's build scripts and cargo configuration
+  # say. So everywhere a job touches head code or head data with cargo in
+  # reach, it runs as an unprivileged user (uid 65534, no `sudo`, no_new_privs)
+  # with no network, through policy/sandbox.sh or policy/offline.sh, in a
+  # directory staged by policy/stage-sandbox.sh:
+  #   * a root-owned copy of the toolchain, called directly (not through rustup,
+  #     so no rust-toolchain file of the head is read);
+  #   * the scripts and tools, root-owned, taken from the BASE checkout;
+  #   * a copy of the head and of the crates, owned by the sandbox user.
+  # Every sandboxed command runs in a PID namespace of its own, and sandbox.sh
+  # kills and checks for leftover processes of its user before it returns, so
+  # nothing of head code is running when the outer shell reads what it wrote. The
+  # differential runs the base binary as 65534 and the head binary as 65533, each
+  # in a directory only its own user can use.
+  # The outer shell, not head code, writes the status and exit files and the
+  # result. Crates are fetched with the network on, as the runner user, in a
+  # step whose working directory is the BASE checkout (cargo reads its
+  # configuration from the working directory and its parents, never from the
+  # head) with --manifest-path pointing at the head's manifest. No secret and no
+  # write token is in any of these jobs; no job here has an environment.
+  #
+  # head-checks runs every check (not one job per check): the result artifact
+  # and the approval re-check name this job, each split job would repeat the
+  # toolchain, crate fetch and build, and the checks share one build directory.
+  # The whole list is ci/checks.sh from the BASE checkout, so a pull request
+  # cannot change what is run on it.
+
+  # Runs the base binary over the head tree as data, in the sandbox.
+  self-lint:
+    name: self-lint
+    needs: [build-base]
+    if: ${{ github.event_name == 'pull_request_target' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      POLICY_SHA256: ${{ needs.build-base.outputs.policy-sha256 }}
+      TOOL_SHA256: ${{ needs.build-base.outputs.tool-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-policy
+          path: base/target/release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-tool
+          path: base/target/release
+      - name: Verify the base binaries (sha256 from build-base)
+        run: |
+          set -eu
+          cd base/target/release
+          printf '%s  unrepresentable-policy\n' "$POLICY_SHA256" | sha256sum -c -
+          printf '%s  unrepresentable\n' "$TOOL_SHA256" | sha256sum -c -
+          chmod 755 unrepresentable-policy unrepresentable
+      - name: Fetch head as files only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: base/target/release/unrepresentable-policy fetch-head head base
+      - name: Toolchain and crates (network allowed only in this step)
+        id: toolchain
+        run: |
+          set -eu
+          CHANNEL="$(sed -n 's/^channel = "\(.*\)"$/\1/p' base/rust-toolchain.toml)"
+          rustup toolchain install "$CHANNEL" --profile minimal -c clippy
+          printf '%s\n' "$CHANNEL" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "unexpected channel '$CHANNEL'" >&2; exit 1; }
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          export RUSTUP_TOOLCHAIN="$CHANNEL" CARGO_HOME="$RUNNER_TEMP/cargo"
+          # crates from the head lock, only when it is crates.io-only with checksums; cargo runs in base/
+          if base/target/release/unrepresentable-policy lock-check head/Cargo.lock; then (cd base && sh ci/cargo.sh fetch --manifest-path "$GITHUB_WORKSPACE/head/Cargo.toml"); fi
+      - name: Stage the sandbox (the base binary and a copy of the head that the tool makes read-only)
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
+        run: sh base/policy/stage-sandbox.sh /opt/sandbox --cargo-home "$RUNNER_TEMP/cargo" --head-as-caller head --bin base/target/release/unrepresentable=unrepresentable
+      - name: Run the base binary over the head tree as data, as an unprivileged user with the network off
+        run: |
+          mkdir -p out
+          export SANDBOX_DIR=/opt/sandbox
+          base/target/release/unrepresentable-policy self-lint --prefix "$GITHUB_WORKSPACE/base/policy/offline.sh" /opt/sandbox/bin/unrepresentable /opt/sandbox/work/head base "$BASE_SHA" "$HEAD_SHA" out/result.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: result-self-lint
+          path: out/result.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  head-checks:
+    name: head-checks
+    needs: [build-base]
+    if: ${{ github.event_name == 'pull_request_target' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      POLICY_SHA256: ${{ needs.build-base.outputs.policy-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-policy
+          path: base/target/release
+      - name: Verify the policy tool (sha256 from build-base)
+        run: |
+          set -eu
+          cd base/target/release
+          printf '%s  unrepresentable-policy\n' "$POLICY_SHA256" | sha256sum -c -
+          chmod 755 unrepresentable-policy
+      - name: Fetch head as files only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: base/target/release/unrepresentable-policy fetch-head head base
+      - name: Toolchain and crates (network allowed only in this step)
+        id: toolchain
+        run: |
+          set -eu
+          CHANNEL="$(sed -n 's/^channel = "\(.*\)"$/\1/p' base/rust-toolchain.toml)"
+          rustup toolchain install "$CHANNEL" --profile minimal -c clippy -c rustfmt
+          printf '%s\n' "$CHANNEL" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "unexpected channel '$CHANNEL'" >&2; exit 1; }
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          export RUSTUP_TOOLCHAIN="$CHANNEL" CARGO_HOME="$RUNNER_TEMP/cargo"
+          # crates from the BASE lock; plus the head lock only when it is crates.io-only with checksums; cargo runs in base/
+          (cd base && sh ci/cargo.sh fetch)
+          if base/target/release/unrepresentable-policy lock-check head/Cargo.lock; then (cd base && sh ci/cargo.sh fetch --manifest-path "$GITHUB_WORKSPACE/head/Cargo.toml"); fi
+          base/target/release/unrepresentable-policy install-tool base/policy/tools.lock zizmor "$RUNNER_TEMP/bin"
+          # cargo-deny (pinned, from the base lock) is staged into the sandbox's bin directory
+          base/target/release/unrepresentable-policy install-tool base/policy/tools.lock cargo-deny "$RUNNER_TEMP/tools"
+      - name: Stage the sandbox (a copy of the head and of the crates for the unprivileged user)
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
+        run: sh base/policy/stage-sandbox.sh /opt/sandbox --cargo-home "$RUNNER_TEMP/cargo" --head head --bin "$RUNNER_TEMP/tools/cargo-deny=cargo-deny"
+      - name: Run every check as an unprivileged user with the network off
+        run: |
+          set +e
+          export SANDBOX_DIR=/opt/sandbox
+          OFF="$GITHUB_WORKSPACE/base/policy/offline.sh"
+          CHECKS="$SANDBOX_DIR/ci/checks.sh"
+          : > "$RUNNER_TEMP/status.txt"
+          check() { name="$1"; shift; (cd "$SANDBOX_DIR/work/head" && "$OFF" sh "$CHECKS" "$name" "$@" --offline); echo "$name $?" >> "$RUNNER_TEMP/status.txt"; }
+          check fmt
+          check clippy
+          check test
+          check policytest
+          check package
+          check selftest
+          check canaries
+          # the tool needs a change range, and the pull request's is the base to the head
+          check owntree --range "$BASE_SHA...HEAD"
+          # licenses, bans and sources read only the manifests and Cargo.lock, so they run here;
+          # advisories need the advisory database (network) and run in the push jobs and the sweep
+          check deny
+          # zizmor (pinned, from the base lock) reads the head's workflows as data, outside the sandbox;
+          # the script and the zizmor config (policy/zizmor.yml) are the base checkout's
+          (cd head && PATH="$RUNNER_TEMP/bin:$PATH" sh "$GITHUB_WORKSPACE/base/ci/checks.sh" audit-workflows > /dev/null 2>&1)
+          echo "audit-workflows $?" >> "$RUNNER_TEMP/status.txt"
+      - name: Write result
+        run: |
+          mkdir -p out
+          base/target/release/unrepresentable-policy head-jobs checks "$RUNNER_TEMP/status.txt" "$BASE_SHA" "$HEAD_SHA" out/result.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: result-head-checks
+          path: out/result.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  build-head:
+    name: build-head
+    needs: [build-base]
+    if: ${{ github.event_name == 'pull_request_target' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      POLICY_SHA256: ${{ needs.build-base.outputs.policy-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-policy
+          path: base/target/release
+      - name: Verify the policy tool (sha256 from build-base)
+        run: |
+          set -eu
+          cd base/target/release
+          printf '%s  unrepresentable-policy\n' "$POLICY_SHA256" | sha256sum -c -
+          chmod 755 unrepresentable-policy
+      - name: Fetch head as files only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: base/target/release/unrepresentable-policy fetch-head head base
+      - name: Toolchain and crates (network allowed only in this step)
+        id: toolchain
+        run: |
+          set -eu
+          CHANNEL="$(sed -n 's/^channel = "\(.*\)"$/\1/p' base/rust-toolchain.toml)"
+          rustup toolchain install "$CHANNEL" --profile minimal
+          printf '%s\n' "$CHANNEL" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "unexpected channel '$CHANNEL'" >&2; exit 1; }
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          export RUSTUP_TOOLCHAIN="$CHANNEL" CARGO_HOME="$RUNNER_TEMP/cargo"
+          (cd base && sh ci/cargo.sh fetch)
+          if base/target/release/unrepresentable-policy lock-check head/Cargo.lock; then (cd base && sh ci/cargo.sh fetch --manifest-path "$GITHUB_WORKSPACE/head/Cargo.toml"); fi
+      - name: Stage the sandbox (a copy of the head and of the crates for the unprivileged user)
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
+        run: sh base/policy/stage-sandbox.sh /opt/sandbox --cargo-home "$RUNNER_TEMP/cargo" --head head
+      - name: Build the head binary as an unprivileged user with the network off
+        run: |
+          set -eu
+          export SANDBOX_DIR=/opt/sandbox
+          cd "$SANDBOX_DIR/work/head"
+          "$GITHUB_WORKSPACE/base/policy/offline.sh" sh "$SANDBOX_DIR/ci/cargo.sh" build --offline
+      - name: Take the binary out of the sandbox (a link in its place is refused)
+        run: |
+          set -eu
+          mkdir -p out
+          sh base/policy/take-file.sh /opt/sandbox/work /opt/sandbox/work/head/target/release/unrepresentable out/unrepresentable
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: head-binary
+          path: out/unrepresentable
+          if-no-files-found: error
+          retention-days: 1
+
+  # The base binary and the head binary on inputs that are not secret: the
+  # head's own tests/fixtures (head data: always run in a generated workspace,
+  # see policy/src/differential/workspace.rs) and the pinned public corpus.
+  # Both binaries run through sandbox.sh. No environment and no secret here: the
+  # hidden corpus is in differential-hidden, which receives no path of the head.
+  differential:
+    name: differential
+    needs: [build-base, build-head]
+    if: ${{ github.event_name == 'pull_request_target' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      POLICY_SHA256: ${{ needs.build-base.outputs.policy-sha256 }}
+      TOOL_SHA256: ${{ needs.build-base.outputs.tool-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-policy
+          path: base/target/release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-tool
+          path: base/target/release
+      - name: Verify the base binaries (sha256 from build-base)
+        run: |
+          set -eu
+          cd base/target/release
+          printf '%s  unrepresentable-policy\n' "$POLICY_SHA256" | sha256sum -c -
+          printf '%s  unrepresentable\n' "$TOOL_SHA256" | sha256sum -c -
+          chmod 755 unrepresentable-policy unrepresentable
+      - name: Fetch head as files only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: base/target/release/unrepresentable-policy fetch-head head base
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: head-binary
+          path: head-binary
+      - name: Toolchain
+        id: toolchain
+        run: |
+          set -eu
+          CHANNEL="$(sed -n 's/^channel = "\(.*\)"$/\1/p' base/rust-toolchain.toml)"
+          rustup toolchain install "$CHANNEL" --profile minimal -c clippy
+          printf '%s\n' "$CHANNEL" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "unexpected channel '$CHANNEL'" >&2; exit 1; }
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+      # The base binary runs as 65534 and the head binary as 65533. Each sits in a
+      # directory only its own user can search (not on any PATH), so the head
+      # binary can neither read nor run the base binary and cannot hand its work to
+      # it. The runner's own copy of the base binary (in the workspace) is hidden
+      # from both users below.
+      - name: Stage the sandbox (the toolchain; each binary readable by its own user only)
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
+        run: sh base/policy/stage-sandbox.sh /opt/sandbox --private-bin 65534:base/target/release/unrepresentable=unrepresentable --private-bin 65533:head-binary/unrepresentable=unrepresentable
+      - name: Hide the runner's workspace from the sandbox users
+        run: chmod 0700 "$GITHUB_WORKSPACE"
+      - name: Public corpus (pinned by sha256)
+        run: |
+          mkdir -p /tmp/diff-inputs/public
+          base/target/release/unrepresentable-policy differential fetch-public base/policy/corpus.lock /tmp/diff-inputs/public
+      - name: Fixtures from head (data)
+        run: |
+          mkdir -p /tmp/diff-inputs/fx
+          git -C head archive "$HEAD_SHA" tests/fixtures | tar -x -C /tmp/diff-inputs/fx
+      - name: Compare base and head binaries, both in the sandbox
+        run: |
+          mkdir -p out
+          export SANDBOX_DIR=/opt/sandbox
+          base/target/release/unrepresentable-policy differential run \
+            --base-bin /opt/sandbox/private-65534/unrepresentable \
+            --head-bin /opt/sandbox/private-65533/unrepresentable \
+            --prefix "$GITHUB_WORKSPACE/base/policy/sandbox.sh" \
+            --base-dir base --base "$BASE_SHA" --head "$HEAD_SHA" --out out/result.txt \
+            --head-input fixtures=/tmp/diff-inputs/fx/tests/fixtures \
+            --input public=/tmp/diff-inputs/public
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: result-differential
+          path: out/result.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  # The base binary and the head binary on the hidden corpus. This is the only
+  # job with the hidden-corpus environment, and it never fetches or reads the
+  # head: only the head binary (an artifact), which runs through sandbox.sh with
+  # no network, an empty environment and no privileges. The secret is in the
+  # environment of the one step that downloads the corpus, which is base code
+  # and finishes before any head code runs. The result holds only the number of
+  # findings lost on the corpus, never a path, rule or message.
+  differential-hidden:
+    name: differential-hidden
+    needs: [build-base, build-head]
+    if: ${{ github.event_name == 'pull_request_target' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: hidden-corpus
+    permissions:
+      contents: read
+    env:
+      POLICY_SHA256: ${{ needs.build-base.outputs.policy-sha256 }}
+      TOOL_SHA256: ${{ needs.build-base.outputs.tool-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-policy
+          path: base/target/release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-tool
+          path: base/target/release
+      - name: Verify the base binaries (sha256 from build-base)
+        run: |
+          set -eu
+          cd base/target/release
+          printf '%s  unrepresentable-policy\n' "$POLICY_SHA256" | sha256sum -c -
+          printf '%s  unrepresentable\n' "$TOOL_SHA256" | sha256sum -c -
+          chmod 755 unrepresentable-policy unrepresentable
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: head-binary
+          path: head-binary
+      - name: Toolchain
+        id: toolchain
+        run: |
+          set -eu
+          CHANNEL="$(sed -n 's/^channel = "\(.*\)"$/\1/p' base/rust-toolchain.toml)"
+          rustup toolchain install "$CHANNEL" --profile minimal -c clippy
+          printf '%s\n' "$CHANNEL" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "unexpected channel '$CHANNEL'" >&2; exit 1; }
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+      # The base binary runs as 65534 and the head binary as 65533. Each sits in a
+      # directory only its own user can search (not on any PATH), so the head
+      # binary can neither read nor run the base binary and cannot hand its work to
+      # it. The runner's own copy of the base binary (in the workspace) is hidden
+      # from both users below.
+      - name: Stage the sandbox (the toolchain; each binary readable by its own user only)
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
+        run: sh base/policy/stage-sandbox.sh /opt/sandbox --private-bin 65534:base/target/release/unrepresentable=unrepresentable --private-bin 65533:head-binary/unrepresentable=unrepresentable
+      - name: Hide the runner's workspace from the sandbox users
+        run: chmod 0700 "$GITHUB_WORKSPACE"
+      - name: Hidden corpus (secret used by base code only)
+        env:
+          HIDDEN_CORPUS_URL: ${{ secrets.HIDDEN_CORPUS_URL }}
+          HIDDEN_CORPUS_TOKEN: ${{ secrets.HIDDEN_CORPUS_TOKEN }}
+        run: |
+          mkdir -p /tmp/diff-inputs/hidden
+          base/target/release/unrepresentable-policy differential fetch-hidden /tmp/diff-inputs/hidden
+      - name: Compare base and head binaries on the hidden corpus, both in the sandbox
+        run: |
+          mkdir -p out
+          export SANDBOX_DIR=/opt/sandbox
+          base/target/release/unrepresentable-policy differential run \
+            --base-bin /opt/sandbox/private-65534/unrepresentable \
+            --head-bin /opt/sandbox/private-65533/unrepresentable \
+            --prefix "$GITHUB_WORKSPACE/base/policy/sandbox.sh" \
+            --base-dir base --base "$BASE_SHA" --head "$HEAD_SHA" --out out/result.txt \
+            --hidden-input hidden=/tmp/diff-inputs/hidden
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: result-differential-hidden
+          path: out/result.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  mutants:
+    name: mutants
+    needs: [build-base]
+    if: ${{ github.event_name == 'pull_request_target' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      POLICY_SHA256: ${{ needs.build-base.outputs.policy-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-policy
+          path: base/target/release
+      - name: Verify the policy tool (sha256 from build-base)
+        run: |
+          set -eu
+          cd base/target/release
+          printf '%s  unrepresentable-policy\n' "$POLICY_SHA256" | sha256sum -c -
+          chmod 755 unrepresentable-policy
+      - name: Fetch head as files only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: base/target/release/unrepresentable-policy fetch-head head base
+      - name: Toolchain, crates and pinned cargo-mutants
+        id: toolchain
+        run: |
+          set -eu
+          CHANNEL="$(sed -n 's/^channel = "\(.*\)"$/\1/p' base/rust-toolchain.toml)"
+          rustup toolchain install "$CHANNEL" --profile minimal
+          printf '%s\n' "$CHANNEL" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "unexpected channel '$CHANNEL'" >&2; exit 1; }
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          export RUSTUP_TOOLCHAIN="$CHANNEL" CARGO_HOME="$RUNNER_TEMP/cargo"
+          (cd base && sh ci/cargo.sh fetch)
+          if base/target/release/unrepresentable-policy lock-check head/Cargo.lock; then (cd base && sh ci/cargo.sh fetch --manifest-path "$GITHUB_WORKSPACE/head/Cargo.toml"); fi
+          base/target/release/unrepresentable-policy install-tool base/policy/tools.lock cargo-mutants "$RUNNER_TEMP/tools"
+          git -C head diff "$BASE_SHA...$HEAD_SHA" -- src > "$RUNNER_TEMP/pr.diff"
+      - name: Stage the sandbox (a copy of the head and of the crates for the unprivileged user)
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
+        run: sh base/policy/stage-sandbox.sh /opt/sandbox --cargo-home "$RUNNER_TEMP/cargo" --head head --bin "$RUNNER_TEMP/tools/cargo-mutants=cargo-mutants" --data "$RUNNER_TEMP/pr.diff=pr.diff"
+      # cargo-mutants runs cargo itself, in the dev profile, in the head copy's
+      # own `target`, so `ci/cargo.sh` (which adds --release) is not used here.
+      # GitHub runners do not use the shared target directory, so no `debug/`
+      # problem arises. cargo-mutants builds once per mutant, and a slower release
+      # build would multiply across every mutant (the job has a 120-minute
+      # timeout). `--cargo-arg=--release` was tried and reverted; revisit only if
+      # the job's build time is measured and release proves faster.
+      - name: cargo mutants --in-diff as an unprivileged user with the network off
+        run: |
+          set +e
+          export SANDBOX_DIR=/opt/sandbox
+          cd "$SANDBOX_DIR/work/head"
+          "$GITHUB_WORKSPACE/base/policy/offline.sh" cargo-mutants mutants \
+            --in-diff "$SANDBOX_DIR/data/pr.diff" --output "$SANDBOX_DIR/mut" \
+            --cargo-arg=--locked --cargo-arg=--offline
+          echo "$?" > "$RUNNER_TEMP/mutants.exit"
+      - name: Write result
+        run: |
+          mkdir -p out
+          base/target/release/unrepresentable-policy head-jobs mutants /opt/sandbox/mut/mutants.out "$(cat "$RUNNER_TEMP/mutants.exit")" "$BASE_SHA" "$HEAD_SHA" out/result.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: result-mutants
+          path: out/result.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  # Named policy-evaluate so no job is called `policy`; the only `policy` check
+  # that counts is the check run the App posts, whatever any job is called.
+  policy-evaluate:
+    name: policy-evaluate
+    needs: [build-base, classify, self-lint, head-checks, differential, differential-hidden, mutants]
+    if: ${{ !cancelled() && github.event_name == 'pull_request_target' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: policy
+    permissions:
+      actions: read
+      contents: read
+    env:
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      POLICY_SHA256: ${{ needs.build-base.outputs.policy-sha256 }}
+      RESULT_CLASSIFY: ${{ needs.classify.result }}
+      RESULT_SELF_LINT: ${{ needs.self-lint.result }}
+      RESULT_HEAD_CHECKS: ${{ needs.head-checks.result }}
+      RESULT_DIFFERENTIAL: ${{ needs.differential.result }}
+      RESULT_DIFFERENTIAL_HIDDEN: ${{ needs.differential-hidden.result }}
+      RESULT_MUTANTS: ${{ needs.mutants.result }}
+    steps:
+      - name: Check out base (the policy code that decides)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: base
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-policy
+          path: base/target/release
+      - name: Verify the policy tool (sha256 from build-base)
+        run: |
+          set -eu
+          cd base/target/release
+          printf '%s  unrepresentable-policy\n' "$POLICY_SHA256" | sha256sum -c -
+          chmod 755 unrepresentable-policy
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: result-*
+          path: results
+      # The token that decides and posts cannot merge: it has no write access to contents.
+      - name: Mint App token (checks and comments; no write access to contents)
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.POLICY_APP_ID }}
+          private-key: ${{ secrets.POLICY_APP_PRIVATE_KEY }}
+          permission-checks: write
+          permission-contents: read
+          permission-pull-requests: write
+      - name: Decide, post the policy check run and the comment
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          READ_TOKEN: ${{ github.token }}
+        run: base/target/release/unrepresentable-policy post decide results base
+      # A second token, minted only for the merge step, is the only one that can
+      # write contents. Nothing is compiled or run from a pull request here.
+      - name: Mint merge token (write access to contents, for the merge step only)
+        id: merge
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.POLICY_APP_ID }}
+          private-key: ${{ secrets.POLICY_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Merge when the verdict is auto (squash, sha-pinned)
+        env:
+          GH_TOKEN: ${{ steps.merge.outputs.token }}
+          READ_TOKEN: ${{ github.token }}
+        run: base/target/release/unrepresentable-policy post merge
+
+  # ---------------------------------------------------------------------------
+  # Pushes to the default branch and manual runs. The pushed tree is trusted
+  # (it is the default branch), so these jobs run the ordinary checks directly,
+  # in parallel, with a read-only token and no secrets. Each one waits only for
+  # skip-check and runs unless skip-check said `yes`; the checks run when
+  # skip-check fails or is skipped, that is, when skip-check cannot decide.
+  # ---------------------------------------------------------------------------
+
+  # Skips the checks when the pushed tree already passed as a pull request
+  # head: `unrepresentable-policy push-skip` compares the git tree of the
+  # pushed commit with the tree of the heads of its pull requests and looks for
+  # a successful `policy` check run from the App on that head. Any error or
+  # doubt prints `skip=no`.
+  skip-check:
+    name: skip-check
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      checks: read
+      contents: read
+      pull-requests: read
+    outputs:
+      skip: ${{ steps.decide.outputs.skip }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the policy tool
+        run: sh ci/cargo.sh build -p unrepresentable-policy
+      - name: Skip when the same tree already has a successful policy check
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out="$(target/release/unrepresentable-policy push-skip "$GITHUB_SHA")" || out='skip=no'
+          printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
+
+  fmt:
+    name: fmt
+    needs: [skip-check]
+    if: ${{ !cancelled() && github.event_name != 'pull_request_target' && needs.skip-check.outputs.skip != 'yes' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh ci/checks.sh fmt
+
+  clippy-main:
+    name: clippy-main
+    needs: [skip-check]
+    if: ${{ !cancelled() && github.event_name != 'pull_request_target' && needs.skip-check.outputs.skip != 'yes' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh ci/checks.sh clippy-main
+
+  clippy-policy:
+    name: clippy-policy
+    needs: [skip-check]
+    if: ${{ !cancelled() && github.event_name != 'pull_request_target' && needs.skip-check.outputs.skip != 'yes' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh ci/checks.sh clippy-policy
+
+  test:
+    name: test
+    needs: [skip-check]
+    if: ${{ !cancelled() && github.event_name != 'pull_request_target' && needs.skip-check.outputs.skip != 'yes' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh ci/checks.sh test
+
+  policytest:
+    name: policytest
+    needs: [skip-check]
+    if: ${{ !cancelled() && github.event_name != 'pull_request_target' && needs.skip-check.outputs.skip != 'yes' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sh ci/checks.sh policytest
+
+  canaries:
+    name: canaries
+    needs: [skip-check]
+    if: ${{ !cancelled() && github.event_name != 'pull_request_target' && needs.skip-check.outputs.skip != 'yes' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: sh ci/checks.sh canaries
+
+  # Licenses, bans and sources (offline) and then advisories (network: the
+  # RustSec database is fetched). Both use the pinned cargo-deny from tools.lock.
+  deny:
+    name: deny
+    needs: [skip-check]
+    if: ${{ !cancelled() && github.event_name != 'pull_request_target' && needs.skip-check.outputs.skip != 'yes' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the policy tool and install the pinned cargo-deny
+        run: |
+          set -eu
+          sh ci/cargo.sh build -p unrepresentable-policy
+          target/release/unrepresentable-policy install-tool policy/tools.lock cargo-deny "$RUNNER_TEMP/bin"
+      - run: PATH="$RUNNER_TEMP/bin:$PATH" sh ci/checks.sh deny
+      - run: PATH="$RUNNER_TEMP/bin:$PATH" sh ci/checks.sh deny-advisories
+
+  # package, selftest and owntree in one job: selftest and owntree share one
+  # release build of the binary, and package unpacks the crate into its own
+  # scratch build directory.
+  self-checks:
+    name: self-checks
+    needs: [skip-check]
+    if: ${{ !cancelled() && github.event_name != 'pull_request_target' && needs.skip-check.outputs.skip != 'yes' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: sh ci/checks.sh package
+      - run: sh ci/checks.sh selftest
+      - run: sh ci/checks.sh owntree
+
+  audit-workflows:
+    name: audit-workflows
+    needs: [skip-check]
+    if: ${{ !cancelled() && github.event_name != 'pull_request_target' && needs.skip-check.outputs.skip != 'yes' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the policy tool and install the pinned zizmor
+        run: |
+          set -eu
+          sh ci/cargo.sh build -p unrepresentable-policy
+          target/release/unrepresentable-policy install-tool policy/tools.lock zizmor "$RUNNER_TEMP/bin"
+      - run: PATH="$RUNNER_TEMP/bin:$PATH" sh ci/checks.sh audit-workflows

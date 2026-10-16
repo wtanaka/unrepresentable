@@ -1,0 +1,17 @@
+# Does nothing. Its only purpose is to start policy-review.yml (workflow_run),
+# which runs from the default branch with App credentials. Nothing from the
+# review event is trusted or read except the PR number.
+name: review-signal
+on:
+  pull_request_review:
+    types: [submitted, dismissed, edited]
+
+permissions: {}
+
+jobs:
+  signal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - run: exit 0

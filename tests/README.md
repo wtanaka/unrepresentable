@@ -14,17 +14,17 @@ says which cases cover which rule. Rule ids are defined in
    - The clippy canaries in `canaries/rust/src/bin/` (one per lint). Fixtures
      and canaries are append-only judge paths: adding one is free; modifying or
      deleting one needs human approval.
-2. The public corpus: crates downloaded and pinned by sha256 in a lock file in
-   this repository. The CI process that reviews a pull request runs the base and
-   the head binary over them and fails on any finding the head loses
-   (`LOST_FINDING`).
-3. A hidden corpus, kept outside the repository, that the CI process that
-   reviews a pull request also runs the base and head binaries over.
+2. The public corpus: crates downloaded and pinned by sha256 in
+   `policy/corpus.lock`. The merge policy runs the base and the head binary over
+   them and fails on any finding the head loses (`LOST_FINDING`).
+3. A hidden corpus, kept outside the repository, that the merge policy also runs
+   the base and head binaries over (see
+   [policy/README.md](../policy/README.md)).
 
 A change to the tool that weakens a rule only on inputs outside all three bodies
 is not detected (see [docs/limits.md](../docs/limits.md)). The "head binary" is
-the tool as built from the pull request, compared by the CI process that reviews
-a pull request with the "base binary" built from the default branch.
+the tool as built from the pull request, compared by the merge policy with the
+"base binary" built from the default branch.
 
 ## What covers which rule
 
@@ -53,6 +53,7 @@ a checkout of the repository.
 ## Running
 
 CI runs the tests with `sh ci/checks.sh test` (see
+[docs/maintainers/development.md](../docs/maintainers/development.md) and
 [ci/cargo.sh](../ci/cargo.sh)). Tests that run the cargo calls made by the tool
 put a `cargo` stand-in on `$CARGO` that logs its arguments
 (`Sandbox::install_cargo_logger`, `run_with_cargo` in `tests/suite/cli.rs`). The

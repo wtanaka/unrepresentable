@@ -1,0 +1,24 @@
+[package]
+name = "unrepresentable-policy"
+version = "0.0.1-alpha.1"
+edition = "2021"
+rust-version = "1.98"
+description = "Merge-policy automation for the unrepresentable repository: classification, approval, check runs, settings audit."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wtanaka/unrepresentable"
+keywords = ["ci", "policy", "merge", "github"]
+categories = ["development-tools", "command-line-utilities"]
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "unrepresentable-policy"
+path = "src/main.rs"
+
+[dependencies]
+base64 = { version = "=0.23.1", default-features = false, features = ["alloc"] }
+glob = { version = "=0.3.4", default-features = false }
+serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
+toml = { version = "=1.1.6", default-features = false, features = ["parse", "std"] }

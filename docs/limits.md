@@ -1,8 +1,8 @@
 # Known limits
 
 This page lists code and situations that `unrepresentable` does not analyze or
-does not report. The guarantees of the tool do not apply to anything listed
-here. The rules are described in [rules.md](rules.md).
+does not report. The guarantees in the [README](../README.md) do not apply to
+anything listed here. The rules are described in [rules.md](rules.md).
 
 ## Macro bodies
 
@@ -128,9 +128,9 @@ writes it.
   is not reported as new debt.
 - Whether the approving human read the change.
 - Dependencies. A dependency is code that runs in CI. The set is small and
-  pinned (they are the `[dependencies]` of `Cargo.toml`), and a compromised
-  release of one of them would run with the tool's access. `cargo-deny` and the
-  exact pins reduce this risk and do not remove it.
+  pinned (see [Dependencies](maintainers/development.md#dependencies)), and a
+  compromised release of one of them would run with the tool's access.
+  `cargo-deny` and the exact pins reduce this risk and do not remove it.
 - TOML floats and dates are read as text, not as numbers, because the tool never
   computes with them. An integer outside 64 bits is read as text too; it is an
   error only where the tool needs an integer (a config count), not for the file.

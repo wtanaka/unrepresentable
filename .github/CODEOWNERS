@@ -1,0 +1,5 @@
+# Code owners. Read from the BASE branch by policy-review.yml; only individual
+# users are supported there (team membership is not resolved: a team owner approves nothing).
+* @wtanaka
+/policy/ @wtanaka
+/.github/ @wtanaka

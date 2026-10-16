@@ -10,12 +10,13 @@ readme = "README.md"
 keywords = ["lint", "ci", "static-analysis", "syn", "agents"]
 categories = ["development-tools", "command-line-utilities"]
 # Root files are anchored with a leading slash: a bare name would also match
-# README.md files in subdirectories.
+# ci/README.md and tests/README.md.
 # Everything the tool and its own lint check need at runtime and nothing else.
 # tests/ is left out on purpose: its helpers read the `[workspace.lints*]`
 # tables of this repository's root manifest, which `cargo package` rewrites
 # into per-crate `[lints]` tables, so the tests cannot pass from the unpacked
-# crate. canaries/ and ci/ belong to the repository, not to the crate.
+# crate. policy/, canaries/, ci/, .github/ and SECURITY.md belong to the
+# repository, not to the crate.
 include = [
   "src/**",
   "/Cargo.toml",
@@ -41,7 +42,7 @@ syn = { version = "=2.0.119", default-features = false, features = ["full", "vis
 toml = { version = "=1.1.6", default-features = false, features = ["parse", "std"] }
 
 [workspace]
-members = [".", "canaries/rust"]
+members = [".", "canaries/rust", "policy"]
 default-members = ["."]
 
 [workspace.lints.rust]

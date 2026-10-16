@@ -1,0 +1,21 @@
+# The zizmor configuration for every zizmor run of this repository: classify and
+# head-checks of policy.yml, `ci/checks.sh audit-workflows`. Each run passes
+# `--config` with this file from the BASE (or pushed, trusted) checkout; an
+# explicit --config makes zizmor discover no other configuration, so a
+# .github/zizmor.yml of the checked tree is never read. policy/** is a judge
+# path, so a pull request cannot change this file without human approval.
+#
+# Only these two findings are ignored, each at its exact file:line:column, so a
+# dangerous trigger added anywhere else is still reported, and a line that moves
+# makes the finding appear again (then move the entry here, by review).
+rules:
+  dangerous-triggers:
+    ignore:
+      # workflow_run is the design: policy-review.yml is a default-branch file that
+      # ignores every field of the triggering event except the pull request
+      # number and treats the pull request as data.
+      - policy-review.yml:4:1
+      # pull_request_target is the design: policy.yml runs from the base branch,
+      # fetches the pull request head as files only, and runs head code only as
+      # an unprivileged user with no network and no secrets.
+      - policy.yml:28:1

@@ -23,9 +23,17 @@
 # --target T) go in ARGS. The script sets neither CARGO_TARGET_DIR nor
 # CARGO_HOME, and it is not part of the consumer installer.
 #
-# Related fact: the cargo calls that the tool itself makes go through
-# `process::cargo` in src/process.rs, the only place that spawns cargo. It
-# inserts `--release --locked` after the subcommand.
+# Related facts:
+# - The head checks of .github/workflows/policy.yml use the copy of this script
+#   from the base checkout, so a pull request cannot change the flags that are
+#   used to check it. policy/src/workflow_checks.rs tests that no workflow line
+#   runs a bare `cargo` and that this script keeps its flags and its fmt guard.
+# - The cargo calls that the tool itself makes go through `process::cargo` in
+#   src/process.rs, the only place that spawns cargo. It inserts
+#   `--release --locked` after the subcommand.
+# - `cargo mutants` in policy.yml does not use this script. It runs cargo in the
+#   dev profile, in the head checkout's own `target`, with `--locked --offline`.
+#   The reason is recorded next to that step in the workflow.
 set -eu
 
 die() {

@@ -42,8 +42,8 @@ that config has one, and a config range that selects no changes exits 2), but
 cannot remove it, because every commit the tool could compare against was
 written by the change. Only a base that does not come from the change can be
 trusted. CI must therefore always pass `--range` or `--against` with a base that
-CI chose itself, as `ci/checks.sh owntree` and `ci/unrepresentable.sh` do, and
-must not rely on `default-range`.
+CI chose itself, as `ci/checks.sh owntree`, the workflows and
+`ci/unrepresentable.sh` do, and must not rely on `default-range`.
 
 ## Configuration notes
 
@@ -61,7 +61,8 @@ must not rely on `default-range`.
   (`EXCEPTION_ADDED`, exit 3).
 - Every member needs a `[member.<name>]` role, or the run exits 2. `init` marks
   every member `pure`; `init` cannot know which crates are shells.
-- `config::TOP_KEYS` is the full list of keys. No key disables a rule.
+- `config::TOP_KEYS` is the full list of keys. No key disables a rule (see
+  [Turning rules off](../README.md#turning-rules-off)).
 - `code` is required and must list at least one glob. `judge` and `append-only`
   add to the built-in judge paths (see
   [Ratchet and change control](change-control.md)).

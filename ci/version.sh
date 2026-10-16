@@ -13,7 +13,9 @@
 # of `[0-9A-Za-z-]`, none empty, numeric ones without leading zeros. Build
 # metadata (`+...`) and a `v` prefix are refused.
 #
-# Users: `ci/checks.sh package`.
+# Users: `ci/checks.sh package`, the tag check of release.yml, and
+# policy/stage-sandbox.sh, which copies it beside checks.sh. A test in
+# policy/src/workflow_checks.rs covers it.
 set -eu
 
 version=$(awk '
