@@ -1,0 +1,15 @@
+struct Item(u32);
+fn fallible() -> Result<Item, Item> {
+    Ok(Item(1))
+}
+macro_rules! bind {
+    () => {
+        let _hidden = fallible();
+    };
+}
+fn invoked() {
+    wrap! {
+        let _inside = fallible();
+    }
+}
+fn main() {}

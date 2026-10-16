@@ -1,0 +1,1 @@
+src/main.rs:5:5: abort-panic

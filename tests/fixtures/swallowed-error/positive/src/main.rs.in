@@ -1,0 +1,38 @@
+struct Item(u32);
+fn fallible() -> Result<Item, Item> {
+    Ok(Item(1))
+}
+fn consume<T>(value: T) {
+    drop(value);
+}
+fn arms(result: Result<Item, Item>) {
+    match result {
+        Ok(item) => consume(item),
+        Err(_) => (),
+    }
+    match result {
+        Ok(item) => consume(item),
+        Err(..) => {}
+    }
+    match result {
+        Ok(item) => consume(item),
+        Err(_reason) => { () }
+    }
+    match result {
+        Ok(item) => consume(item),
+        Result::Err(_) => {}
+    }
+    match result {
+        Ok(item) => consume(item),
+        std::result::Result::Err(_) => (),
+    }
+}
+fn conditionals() {
+    if let Ok(item) = fallible() {
+        consume(item);
+    }
+    while let Ok(item) = fallible() {
+        consume(item);
+    }
+}
+fn main() {}

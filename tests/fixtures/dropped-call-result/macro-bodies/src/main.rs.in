@@ -1,0 +1,18 @@
+struct Item(u32);
+fn fallible() -> Result<Item, Item> {
+    Ok(Item(1))
+}
+macro_rules! release {
+    () => {
+        drop(fallible())
+    };
+}
+wrap! {
+    fn inside() {
+        drop(fallible());
+    }
+}
+fn args() {
+    wrap!(drop(fallible()));
+}
+fn main() {}

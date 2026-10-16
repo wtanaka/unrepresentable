@@ -1,0 +1,3 @@
+pub(crate) struct Form;
+pub(crate) struct Plain;
+macro_rules! form_macro { () => {}; }

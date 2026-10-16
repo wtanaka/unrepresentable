@@ -1,0 +1,33 @@
+struct Unit;
+struct Braced {}
+struct Tuple();
+struct Full {
+    a: Unit,
+}
+enum Shape {
+    Nothing,
+    Empty {},
+    Pair(Unit, Unit),
+    Rich { a: Unit },
+}
+mod inner {
+    pub struct Marker;
+}
+use inner::Marker as Alias;
+fn read(unit: Unit, braced: Braced, tuple: Tuple, marker: Alias, full: Full) {
+    let Unit { .. } = unit;
+    let Braced { .. } = braced;
+    let Tuple(..) = tuple;
+    let Alias { .. } = marker;
+    let Full { a, .. } = full;
+    drop(a);
+}
+fn variants(shape: Shape) {
+    match shape {
+        Shape::Nothing { .. } => (),
+        Shape::Empty { .. } => (),
+        Shape::Pair(first, ..) => drop(first),
+        Shape::Rich { a, .. } => drop(a),
+    }
+}
+fn main() {}

@@ -1,0 +1,6 @@
+#[cfg(all(test, all(feature = "x", unix)))]
+mod outer {
+    mod inner;
+}
+
+fn main() {}

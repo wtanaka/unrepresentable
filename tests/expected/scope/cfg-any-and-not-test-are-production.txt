@@ -1,0 +1,2 @@
+src/maybe.rs:2:5: abort-assert
+src/only.rs:2:5: abort-assert

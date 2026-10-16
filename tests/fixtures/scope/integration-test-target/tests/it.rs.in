@@ -1,0 +1,8 @@
+struct Id(u32);
+fn helper(value: Option<Id>) -> Id {
+    value.unwrap()
+}
+#[test]
+fn holds() {
+    assert!(true);
+}

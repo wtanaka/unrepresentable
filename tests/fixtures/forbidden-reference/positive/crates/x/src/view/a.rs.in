@@ -1,0 +1,3 @@
+use crate::edit::Form as F;
+fn use_it(form: &F) {}
+fn deep(form: &super::super::edit::Form) {}

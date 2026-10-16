@@ -1,0 +1,8 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+cargo-exceptions = [".cargo/config.toml:build.rustflags"]
+
+[member.fx]
+role = "pure"
+

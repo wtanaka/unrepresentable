@@ -1,0 +1,3 @@
+fn orphan() {
+    panic!("never compiled");
+}

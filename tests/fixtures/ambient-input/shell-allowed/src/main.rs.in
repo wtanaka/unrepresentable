@@ -1,0 +1,4 @@
+fn read() {
+    drop(std::env::var("HOME"));
+}
+fn main() {}

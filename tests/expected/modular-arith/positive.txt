@@ -1,0 +1,5 @@
+src/main.rs:2:15: modular-arith
+src/main.rs:5:15: modular-arith
+src/main.rs:8:15: modular-arith
+src/main.rs:11:15: modular-arith
+src/main.rs:14:19: modular-arith

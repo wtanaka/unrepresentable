@@ -1,0 +1,6 @@
+struct Ratio(f64);
+fn make() {
+    let small: f32 = 1.0;
+    drop(small);
+}
+fn main() {}

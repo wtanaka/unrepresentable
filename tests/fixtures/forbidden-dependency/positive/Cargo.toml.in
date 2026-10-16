@@ -1,0 +1,5 @@
+[workspace]
+members = ["crates/*"]
+exclude = ["vendor/num-bigint"]
+
+#LINTS#

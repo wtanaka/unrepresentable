@@ -1,0 +1,3 @@
+crates/x/src/view/a.rs:1:18: forbidden-reference
+crates/x/src/view/a.rs:2:18: forbidden-reference
+crates/x/src/view/a.rs:3:16: forbidden-reference

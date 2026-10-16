@@ -1,0 +1,5 @@
+#[cfg(test)]
+fn one() {}
+#[cfg(feature = "other")]
+fn two() {}
+fn main() {}

@@ -1,0 +1,4 @@
+src/main.rs:6:1: unparsed-macro
+src/main.rs:8:28: struct-rest-pattern
+src/main.rs:12:52: struct-rest-pattern
+src/main.rs:16:28: struct-rest-pattern

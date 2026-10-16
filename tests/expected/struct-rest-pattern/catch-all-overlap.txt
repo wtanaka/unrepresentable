@@ -1,0 +1,4 @@
+src/main.rs:15:33: catch-all-arm
+src/main.rs:16:33: catch-all-arm
+src/main.rs:21:26: struct-rest-pattern
+src/main.rs:26:24: struct-rest-pattern

@@ -1,0 +1,20 @@
+struct Id(u32);
+fn a(value: Option<Id>) -> Id {
+    value.unwrap_or(Id(0))
+}
+fn b(value: Option<Id>) -> Id {
+    value.unwrap_or_default()
+}
+#[must_use]
+fn c(value: Result<Id, Id>) -> Option<Id> {
+    value.ok()
+}
+struct Other(u32);
+#[must_use]
+fn d(value: Option<Id>, other: Option<Other>) -> Option<Id> {
+    value.or(other.map(|inner| Id(inner.0)))
+}
+fn e(value: Option<Id>) -> Id {
+    value.map_or(Id(0), |id| id)
+}
+fn main() {}

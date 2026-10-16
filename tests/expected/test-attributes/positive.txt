@@ -1,0 +1,2 @@
+src/main.rs:2:1: test-attributes
+src/main.rs:7:1: test-attributes

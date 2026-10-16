@@ -1,0 +1,10 @@
+struct Id(u32);
+struct Other(u32);
+fn compare(left: Id, right: Other) -> Id {
+    if left.0 < right.0 {
+        left
+    } else {
+        Id(right.0)
+    }
+}
+fn main() {}

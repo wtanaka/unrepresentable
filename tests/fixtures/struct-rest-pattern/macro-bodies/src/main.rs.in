@@ -1,0 +1,19 @@
+struct Config {
+    host: Host,
+    port: Host,
+}
+struct Host(u32);
+macro_rules! host_of {
+    ($config:expr) => {
+        let Config { host, .. } = $config;
+    };
+}
+fn matched(config: Config) {
+    let found = matches!(config, Config { port: _, .. });
+}
+fn invoked(config: Config) {
+    wrap! {
+        let Config { host, .. } = config;
+    }
+}
+fn main() {}

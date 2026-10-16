@@ -1,0 +1,19 @@
+struct Id(u32);
+struct Other(u32);
+fn add(left: Id, right: Other) -> Id {
+    Id(left.0 + right.0)
+}
+fn sub(left: Id, right: Other) -> Id {
+    Id(left.0 - right.0)
+}
+fn shift(left: Id) -> Id {
+    Id(left.0 << 1)
+}
+fn assign(mut left: Id, right: Other) -> Id {
+    left.0 += right.0;
+    left
+}
+fn mask(left: Id) -> Id {
+    Id(left.0 & 1)
+}
+fn main() {}

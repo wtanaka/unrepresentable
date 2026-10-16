@@ -1,0 +1,11 @@
+fn make() -> Kind {
+    Kind::A
+}
+enum Kind {
+    A,
+}
+#[test]
+fn custom() {
+    check_it!(make());
+}
+fn main() {}

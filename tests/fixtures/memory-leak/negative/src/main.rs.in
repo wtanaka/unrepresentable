@@ -1,0 +1,31 @@
+struct Item(u32);
+fn owned(item: Box<Item>) {
+    drop(item);
+}
+fn forgotten(item: Item) {
+    std::mem::forget(item);
+}
+fn raw(item: Box<Item>) {
+    Box::into_raw(item);
+}
+struct Detector;
+impl Detector {
+    fn leak(&self, item: Item) {
+        drop(item);
+    }
+}
+fn with_argument(detector: Detector, item: Item) {
+    detector.leak(item);
+}
+mod mine {
+    pub struct Box;
+    impl Box {
+        pub fn leak() {}
+    }
+    pub struct ManuallyDrop;
+    pub fn go() {
+        Box::leak();
+        ManuallyDrop::new();
+    }
+}
+fn main() {}

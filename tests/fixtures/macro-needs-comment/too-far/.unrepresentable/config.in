@@ -1,0 +1,11 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+
+[member.fx]
+role = "pure"
+
+[[macro-comment]]
+macro = "proptest"
+prefix = "// pins: "
+within-lines = 3

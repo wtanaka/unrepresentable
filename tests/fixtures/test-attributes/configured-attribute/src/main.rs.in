@@ -1,0 +1,11 @@
+fn make() -> Kind {
+    Kind::A
+}
+enum Kind {
+    A,
+}
+#[my::test]
+fn custom() {
+    let value = make();
+}
+fn main() {}

@@ -1,0 +1,42 @@
+struct Item(u32);
+#[derive(Default)]
+struct Plain {
+    a: Item,
+}
+#[derive(Clone, Default)]
+struct Tuple(Item);
+#[derive(Default)]
+struct Unit;
+#[derive(Default)]
+struct Generic<T> {
+    value: T,
+}
+#[derive(Default)]
+union Raw {
+    a: Item,
+}
+#[cfg_attr(test, derive(Debug, Default))]
+struct Gated {
+    a: Item,
+}
+#[derive(Default, Clone)]
+struct First {
+    a: Item,
+}
+struct Pair {
+    a: Item,
+    b: Item,
+}
+fn update(a: Item) -> Pair {
+    Pair {
+        a,
+        ..Default::default()
+    }
+}
+fn method_form(a: Item) -> Pair {
+    Pair {
+        a,
+        ..Pair::default()
+    }
+}
+fn main() {}

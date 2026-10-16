@@ -1,0 +1,11 @@
+use std::collections as coll;
+use std::process::*;
+fn one() {
+    let map: coll::HashMap<Id, Id> = coll::HashMap::new();
+    drop(map);
+}
+fn two() {
+    exit(1);
+}
+struct Id(u32);
+fn main() {}

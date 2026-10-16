@@ -1,0 +1,7 @@
+struct Id(u32);
+#[derive(Debug)]
+struct One;
+fn copy(id: &Id) {
+    drop(id);
+}
+fn main() {}

@@ -1,0 +1,79 @@
+# unrepresentable configuration for this repository.
+# This file lists facts about the repository that the tool cannot determine
+# itself (which paths are code, which crates may do I/O) and the recorded
+# exceptions to rules, each with a reason.
+
+baseline = "forbidden"
+default-range = "main...HEAD"
+code = ["src/**", "tests/*.rs", "tests/suite/**", "tests/support/**"]
+judge = ["tests/fixtures/**", "tests/expected/**", "policy/**", "ci/**", "deny.toml"]
+append-only = ["tests/fixtures/**", "tests/expected/**"]
+canary-dirs = ["tests/canaries/"]
+clippy-canaries = { package = "unrepresentable-canaries", dir = "canaries/rust/src/bin" }
+
+[member.unrepresentable]
+role = "shell"
+ambient = [
+  { path = "std::fs", files = ["src/io.rs"] },
+  { path = "std::io::stdout", files = ["src/io.rs"] },
+  { path = "std::io::stderr", files = ["src/io.rs"] },
+  { path = "std::env::args_os", files = ["src/main.rs"] },
+  { path = "std::env::var_os", files = ["src/process.rs"] },
+  { path = "std::process", files = ["src/process.rs", "src/main.rs"] },
+  { path = "std::fs", files = ["tests/**"] },
+  { path = "std::env", files = ["tests/**"] },
+  { path = "std::os", files = ["tests/**"] },
+  { path = "std::process", files = ["tests/**"] },
+]
+newtypes = [
+  { type = "Message", methods = ["from_string", "of", "as_str"] },
+  { type = "RelPath", methods = ["from_string", "of", "as_str", "join"] },
+  { type = "Source", methods = ["from_string", "as_str"] },
+  { type = "Text", methods = ["from_string", "of", "as_str"] },
+  { type = "Name", methods = ["from_string", "of", "as_str"] },
+  { type = "KnobName", methods = ["text"] },
+  { type = "Priority", methods = ["new", "get"] },
+  { type = "RuleId", methods = ["name"] },
+  { type = "PatternTable", methods = ["entries"] },
+  { type = "PathPattern", methods = ["of"] },
+  { type = "Args", methods = ["of", "with"] },
+  { type = "KeySet", methods = ["of"] },
+  { type = "Line", methods = ["new", "get"] },
+  { type = "Col", methods = ["new", "get"] },
+  { type = "Offset", methods = ["new", "get"] },
+  { type = "Count", methods = ["new", "get"] },
+  { type = "Glyph", methods = ["new", "get"] },
+]
+
+[member.unrepresentable-canaries]
+role = "pure"
+
+[[macro-comment]]
+macro = "proptest"
+prefix = "// pins: "
+within-lines = 3
+
+[member.unrepresentable-policy]
+role = "shell"
+ambient = [
+  { path = "std::fs", files = ["policy/src/io.rs"] },
+  { path = "std::env::vars_os", files = ["policy/src/io.rs"] },
+  { path = "std::time::SystemTime", files = ["policy/src/io.rs"] },
+  { path = "std::io::stdout", files = ["policy/src/io.rs"] },
+  { path = "std::io::stderr", files = ["policy/src/io.rs"] },
+  { path = "std::env::args_os", files = ["policy/src/main.rs"] },
+  { path = "std::process", files = ["policy/src/process.rs", "policy/src/main.rs"] },
+]
+newtypes = [
+  { type = "Message", methods = ["from_string", "of", "as_str"] },
+  { type = "Text", methods = ["from_string", "of", "as_str"] },
+  { type = "Name", methods = ["from_string", "of", "as_str"] },
+  { type = "RelPath", methods = ["from_string", "of", "as_str"] },
+  { type = "Sha", methods = ["as_str"] },
+  { type = "Token", methods = ["as_str"] },
+  { type = "Count", methods = ["new", "get"] },
+  { type = "Offset", methods = ["new", "get"] },
+  { type = "Glyph", methods = ["new", "get"] },
+  { type = "Bytes", methods = ["from_vec", "of", "as_slice"] },
+  { type = "Args", methods = ["of", "with"] },
+]

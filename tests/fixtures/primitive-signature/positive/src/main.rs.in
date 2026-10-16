@@ -1,0 +1,8 @@
+struct Id(u32);
+fn takes(count: u32) {}
+fn returns() -> String {
+    String::new()
+}
+fn borrows(name: &str) {}
+fn nested(items: Vec<Option<i64>>) {}
+fn main() {}

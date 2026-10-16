@@ -1,0 +1,60 @@
+mod shapes {
+    pub struct Point {
+        pub x: super::Axis,
+        pub y: super::Axis,
+    }
+    pub enum Shape {
+        Circle { center: Point, radius: super::Axis },
+        Dot(Point),
+    }
+}
+mod public {
+    pub use super::shapes::Point as Exported;
+}
+struct Axis(u32);
+type Alias = shapes::Point;
+use shapes::Point as Renamed;
+use shapes::Shape::{self, Circle};
+fn through_use(point: Renamed) -> Axis {
+    let Renamed { x, .. } = point;
+    x
+}
+fn through_alias(point: Alias) -> Axis {
+    let Alias { x, .. } = point;
+    x
+}
+fn through_reexport(point: public::Exported) -> Axis {
+    let public::Exported { x, .. } = point;
+    x
+}
+fn by_path(point: shapes::Point) -> Axis {
+    let shapes::Point { x, .. } = point;
+    x
+}
+fn crate_path(point: crate::shapes::Point) -> Axis {
+    let crate::shapes::Point { x, .. } = point;
+    x
+}
+fn variants(shape: Shape) {
+    match shape {
+        Circle { radius, .. } => drop(radius),
+        Shape::Dot(..) => (),
+    }
+}
+impl Axis {
+    fn same(self) -> Axis {
+        let Self(value) = self;
+        Axis(value)
+    }
+}
+struct Pair {
+    left: Axis,
+    right: Axis,
+}
+impl Pair {
+    fn left(self) -> Axis {
+        let Self { left, .. } = self;
+        left
+    }
+}
+fn main() {}

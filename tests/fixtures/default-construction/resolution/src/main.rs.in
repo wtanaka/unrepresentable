@@ -1,0 +1,71 @@
+mod shapes {
+    pub struct Axis(pub u32);
+    pub struct Point {
+        pub x: Axis,
+        pub y: Axis,
+    }
+}
+mod public {
+    pub use super::shapes::Point as Exported;
+}
+use shapes::Axis;
+use shapes::Point as Renamed;
+use std::default::Default as Dflt;
+type Alias = shapes::Point;
+#[derive(Dflt)]
+struct ViaRename {
+    a: Axis,
+}
+#[derive(core::default::Default)]
+struct ViaCore {
+    a: Axis,
+}
+#[derive(std::default::Default)]
+struct ViaStd {
+    a: Axis,
+}
+fn through_use(x: Axis) -> Renamed {
+    Renamed {
+        x,
+        ..Default::default()
+    }
+}
+fn through_alias(x: Axis) -> Alias {
+    Alias {
+        x,
+        ..Default::default()
+    }
+}
+fn through_reexport(x: Axis) -> public::Exported {
+    public::Exported {
+        x,
+        ..Default::default()
+    }
+}
+fn core_path(x: Axis) -> shapes::Point {
+    shapes::Point {
+        x,
+        ..core::default::Default::default()
+    }
+}
+fn qualified(x: Axis) -> shapes::Point {
+    shapes::Point {
+        x,
+        ..<shapes::Point as Default>::default()
+    }
+}
+fn associated(x: Axis) -> shapes::Point {
+    shapes::Point {
+        x,
+        ..shapes::Point::default()
+    }
+}
+impl shapes::Point {
+    fn make(x: Axis) -> Self {
+        Self {
+            x,
+            ..Default::default()
+        }
+    }
+}
+fn main() {}

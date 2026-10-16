@@ -1,0 +1,36 @@
+struct Config {
+    host: Host,
+    port: Host,
+}
+struct Host(u32);
+struct Wrapper(Host, Host);
+enum Event {
+    Move { x: Host, y: Host },
+    Pair(Host, Host),
+    Quit,
+}
+fn explicit(config: Config, wrapper: Wrapper, event: Event) {
+    let Config { host, port: _ } = config;
+    let Wrapper(first, _) = wrapper;
+    drop((host, first));
+    match event {
+        Event::Move { x, y: _ } => drop(x),
+        Event::Pair(first, _) => drop(first),
+        Event::Quit => (),
+    }
+}
+fn external(list: syn::MetaList, range: std::ops::Range<Host>) {
+    let syn::MetaList { path, .. } = list;
+    let std::ops::Range { start, .. } = range;
+    drop((path, start));
+}
+fn unresolved(value: Unknown) {
+    let Unknown { field, .. } = value;
+    drop(field);
+}
+fn not_struct_fields(items: &[Host], pair: (Host, Host)) {
+    let [first, ..] = items;
+    let (head, ..) = pair;
+    drop((first, head));
+}
+fn main() {}

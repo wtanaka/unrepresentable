@@ -1,0 +1,7 @@
+struct Count(u32);
+struct Name(String);
+struct Pair {
+    count: Count,
+    name: Name,
+}
+fn main() {}

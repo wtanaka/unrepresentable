@@ -1,0 +1,10 @@
+struct Id(u32);
+struct Other(u32);
+#[must_use]
+fn a(left: Id, right: Other) -> Option<Id> {
+    match left.0.checked_add(right.0) {
+        Some(sum) => Some(Id(sum)),
+        None => None,
+    }
+}
+fn main() {}

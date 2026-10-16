@@ -1,0 +1,4 @@
+src/main.rs:2:19: ambient-input
+src/main.rs:4:14: unordered-collection
+src/main.rs:4:38: unordered-collection
+src/main.rs:8:5: abort-panic

@@ -1,0 +1,9 @@
+struct Id(u32);
+#[must_use]
+fn find() -> Option<Id> {
+    None
+}
+fn result() -> Result<Id, Id> {
+    Err(Id(0))
+}
+fn main() {}

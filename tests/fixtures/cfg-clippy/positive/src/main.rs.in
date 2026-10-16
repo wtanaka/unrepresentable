@@ -1,0 +1,7 @@
+#[cfg(clippy)]
+fn one() {}
+#[cfg_attr(clippy, derive(Debug))]
+struct Two;
+#[cfg(not(clippy))]
+fn three() {}
+fn main() {}

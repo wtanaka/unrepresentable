@@ -1,0 +1,28 @@
+struct Item(u32);
+struct Pair {
+    left: Item,
+    right: Item,
+}
+fn fallible() -> Result<Item, Item> {
+    Ok(Item(1))
+}
+fn consume<T>(value: T) {
+    drop(value);
+}
+fn plain() {
+    let _result = fallible();
+    let _typed: Result<Item, Item> = fallible();
+    let (kept, _second) = (Item(1), fallible());
+    consume(kept);
+    let Pair { left, right: _right } = Pair {
+        left: Item(1),
+        right: Item(2),
+    };
+    consume(left);
+    let [_first, ..] = [Item(1), Item(2)];
+    let Some(_value) = Some(Item(1)) else {
+        return;
+    };
+    let _guard = fallible();
+}
+fn main() {}

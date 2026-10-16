@@ -1,0 +1,10 @@
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+fn make() {
+    let seen: BTreeSet<Count> = BTreeSet::new();
+    let map: BTreeMap<Count, Count> = BTreeMap::new();
+    drop((seen, map));
+}
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct Count(u32);
+fn main() {}

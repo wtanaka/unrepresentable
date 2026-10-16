@@ -1,0 +1,2 @@
+src/main.rs:29:9: swallowed-error
+src/main.rs:33:9: swallowed-error

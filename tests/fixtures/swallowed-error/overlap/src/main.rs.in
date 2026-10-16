@@ -1,0 +1,24 @@
+enum Kind {
+    A,
+    B,
+}
+fn consume<T>(value: T) {
+    drop(value);
+}
+fn work() {}
+fn arms(result: Result<Kind, Kind>) {
+    match result {
+        Ok(kind) => consume(kind),
+        Err(Kind::A) => work(),
+        Err(_) => (),
+    }
+}
+fn shortcut(result: Result<Kind, Kind>) {
+    if let Ok(Kind::A) = result {
+        work();
+    }
+    if let Ok(kind) = result {
+        consume(kind);
+    }
+}
+fn main() {}

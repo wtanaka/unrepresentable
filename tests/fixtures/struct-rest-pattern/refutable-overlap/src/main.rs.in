@@ -1,0 +1,44 @@
+struct Point {
+    x: Kind,
+    y: Kind,
+}
+enum Kind {
+    A,
+    B,
+}
+enum Ws {
+    A { first: Kind, second: Kind },
+    B(Kind, Kind),
+    Plain { point: Point },
+}
+fn consume<T>(value: T) {
+    drop(value);
+}
+fn owned_by_refutable_shortcut(ws: Ws) {
+    if let Ws::A { .. } = ws {
+        consume(Kind::A);
+    }
+    while let Ws::B(first, ..) = ws {
+        consume(first);
+    }
+    let Ws::A { first, .. } = ws else {
+        return;
+    };
+    consume(first);
+    consume(matches!(ws, Ws::A { .. }));
+}
+fn chain(ws: Ws, ready: Kind) {
+    if let Ws::A { first, .. } = ws && matches!(ready, Kind::A) {
+        consume(first);
+    }
+}
+fn nested_plain_struct(ws: Ws) {
+    if let Ws::Plain { point: Point { x, .. } } = ws {
+        consume(x);
+    }
+}
+fn irrefutable(point: Point) {
+    let Point { x, .. } = point;
+    consume(x);
+}
+fn main() {}

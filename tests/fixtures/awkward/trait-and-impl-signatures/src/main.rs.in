@@ -1,0 +1,14 @@
+struct Id(u32);
+trait Tool {
+    fn run(&self, flag: bool) -> Option<Id>;
+    fn count(&self) -> usize;
+}
+impl Tool for Id {
+    fn run(&self, flag: bool) -> Option<Id> {
+        None
+    }
+    fn count(&self) -> usize {
+        0
+    }
+}
+fn main() {}

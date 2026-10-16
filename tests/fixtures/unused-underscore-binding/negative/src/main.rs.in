@@ -1,0 +1,42 @@
+struct Item(u32);
+fn fallible() -> Result<Item, Item> {
+    Ok(Item(1))
+}
+fn consume<T>(value: T) {
+    drop(value);
+}
+fn work() {}
+fn reads() {
+    let _a = fallible();
+    consume(_a);
+    let _b = fallible();
+    let reader = || _b;
+    consume(reader);
+    let _c = Item(1);
+    let text = format!("{_c:?}");
+    consume(text);
+    let _d = fallible();
+    use_it!(_d);
+    let _guard = fallible();
+    work();
+    drop(_guard);
+    let _e = fallible();
+    {
+        consume(_e);
+    }
+    let _shadow = fallible();
+    let _shadow = Item(2);
+    consume(_shadow);
+}
+fn not_covered(_param: Item, items: Vec<Item>, value: Option<Item>) {
+    let closure = |_x: Item| ();
+    consume(closure);
+    for _item in items {
+        work();
+    }
+    match value {
+        Some(_inner) => work(),
+        None => work(),
+    }
+}
+fn main() {}

@@ -1,0 +1,3 @@
+src/main.rs:22:19: struct-rest-pattern
+src/main.rs:29:28: struct-rest-pattern
+src/main.rs:30:26: struct-rest-pattern

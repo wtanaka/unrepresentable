@@ -1,0 +1,3 @@
+src/main.rs:13:13: catch-all-arm
+src/main.rs:17:8: refutable-shortcut
+src/main.rs:20:12: swallowed-error

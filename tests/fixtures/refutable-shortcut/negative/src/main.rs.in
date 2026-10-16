@@ -1,0 +1,17 @@
+enum Kind {
+    A,
+    B,
+}
+fn check(value: Option<Kind>) -> Kind {
+    if let Some(kind) = value {
+        return kind;
+    }
+    Kind::A
+}
+fn full(kind: Kind) -> Kind {
+    match kind {
+        Kind::A => Kind::B,
+        Kind::B => Kind::A,
+    }
+}
+fn main() {}

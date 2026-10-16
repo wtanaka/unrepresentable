@@ -1,0 +1,2 @@
+src/main.rs:1:4: bool-param
+src/main.rs:2:4: bool-param

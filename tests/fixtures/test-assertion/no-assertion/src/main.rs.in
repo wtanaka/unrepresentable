@@ -1,0 +1,11 @@
+fn make() -> Kind {
+    Kind::A
+}
+enum Kind {
+    A,
+}
+#[test]
+fn no_assert() {
+    let value = make();
+}
+fn main() {}

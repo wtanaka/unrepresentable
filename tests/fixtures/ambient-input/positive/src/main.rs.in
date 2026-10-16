@@ -1,0 +1,6 @@
+fn read() {
+    drop(std::env::var("HOME"));
+    drop(std::fs::read_to_string("x"));
+    drop(std::time::Instant::now());
+}
+fn main() {}

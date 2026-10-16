@@ -1,0 +1,5 @@
+crates/svc/src/main.rs:2:5: dropped-call-result
+crates/svc/src/main.rs:2:10: banned:no-io-writes
+crates/svc/src/main.rs:3:5: dropped-call-result
+crates/svc/src/main.rs:3:10: banned:no-io-writes
+crates/svc/src/main.rs:4:5: banned:no-io-writes

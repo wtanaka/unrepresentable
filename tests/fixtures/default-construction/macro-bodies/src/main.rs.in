@@ -1,0 +1,34 @@
+struct Item(u32);
+struct Pair {
+    a: Item,
+    b: Item,
+}
+macro_rules! make {
+    () => {
+        #[derive(Default)]
+        struct Made {
+            a: Item,
+        }
+    };
+}
+macro_rules! build {
+    ($a:expr) => {
+        Pair {
+            a: $a,
+            ..Default::default()
+        }
+    };
+}
+wrap! {
+    #[derive(Default)]
+    struct Wrapped {
+        a: Item,
+    }
+}
+fn invoked(a: Item) -> Pair {
+    wrap!(Pair {
+        a,
+        ..Default::default()
+    })
+}
+fn main() {}

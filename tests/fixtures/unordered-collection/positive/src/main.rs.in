@@ -1,0 +1,11 @@
+use std::collections::HashMap;
+use std::collections::HashSet;
+struct Index {
+    inner: HashMap<Id, Id>,
+}
+struct Id(u32);
+fn make() {
+    let seen: HashSet<Id> = HashSet::new();
+    drop(seen);
+}
+fn main() {}

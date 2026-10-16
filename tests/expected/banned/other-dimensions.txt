@@ -1,0 +1,4 @@
+src/main.rs:2:10: banned:no-default
+src/main.rs:2:10: default-construction
+src/main.rs:5:6: banned:no-display
+src/main.rs:11:20: banned:no-clone

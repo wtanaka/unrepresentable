@@ -1,0 +1,4 @@
+src/main.rs:2:5: abort-panic
+src/main.rs:5:5: abort-panic
+src/main.rs:8:5: abort-panic
+src/main.rs:11:5: abort-panic

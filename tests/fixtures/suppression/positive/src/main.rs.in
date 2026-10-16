@@ -1,0 +1,9 @@
+#[allow(dead_code)]
+struct One;
+#[warn(unused)]
+struct Two;
+#[expect(dead_code)]
+struct Three;
+#[expect(dead_code, reason = "no ledger row")]
+struct Four;
+fn main() {}

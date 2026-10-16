@@ -1,0 +1,16 @@
+struct A;
+struct B;
+struct Y;
+impl From<A> for Y {
+    #[expect(dead_code, reason = "label test")]
+    fn from(value: A) -> Self {
+        Self
+    }
+}
+impl From<B> for Y {
+    #[expect(dead_code, reason = "label test")]
+    fn from(value: B) -> Self {
+        Self
+    }
+}
+fn main() {}

@@ -1,0 +1,5 @@
+src/main.rs:4:15: arith-operator
+src/main.rs:7:15: arith-operator
+src/main.rs:10:15: arith-operator
+src/main.rs:13:12: arith-operator
+src/main.rs:17:15: arith-operator

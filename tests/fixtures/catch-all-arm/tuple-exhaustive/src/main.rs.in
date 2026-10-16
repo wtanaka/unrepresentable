@@ -1,0 +1,12 @@
+enum Kind {
+    A,
+    B,
+}
+fn pair(kind: Kind, result: Result<Kind, Kind>) -> Kind {
+    match (kind, result) {
+        (Kind::A, Ok(value)) => value,
+        (Kind::B, _) => Kind::A,
+        (Kind::A, Err(_)) => Kind::B,
+    }
+}
+fn main() {}

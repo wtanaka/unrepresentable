@@ -1,0 +1,8 @@
+fn pick(value: Option<Result<Count, Count>>) -> Count {
+    match value {
+        Some(Ok(count)) => count,
+        _ => Count(0),
+    }
+}
+struct Count(u32);
+fn main() {}

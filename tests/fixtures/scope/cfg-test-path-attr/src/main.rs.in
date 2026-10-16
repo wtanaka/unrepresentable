@@ -1,0 +1,9 @@
+#[cfg(test)]
+#[path = "foo_tests.rs"]
+mod foo_tests;
+
+fn production() {
+    assert!(true);
+}
+
+fn main() {}

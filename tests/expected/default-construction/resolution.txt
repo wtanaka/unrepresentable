@@ -1,0 +1,10 @@
+src/main.rs:15:10: default-construction
+src/main.rs:19:25: default-construction
+src/main.rs:23:24: default-construction
+src/main.rs:30:9: default-construction
+src/main.rs:36:9: default-construction
+src/main.rs:42:9: default-construction
+src/main.rs:48:9: default-construction
+src/main.rs:54:9: default-construction
+src/main.rs:60:9: default-construction
+src/main.rs:67:13: default-construction

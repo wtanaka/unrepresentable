@@ -1,0 +1,8 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+arith-files = ["src/math.rs"]
+
+[member.fx]
+role = "pure"
+

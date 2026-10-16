@@ -1,0 +1,8 @@
+enum Kind {
+    A,
+    B,
+}
+fn check(kind: Kind) {
+    if let Kind::A = kind {}
+}
+fn main() {}

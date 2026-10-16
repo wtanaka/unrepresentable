@@ -1,0 +1,16 @@
+use std::mem;
+struct Item(u32);
+fn fallible() -> Result<Item, Item> {
+    Ok(Item(1))
+}
+fn calls(items: Vec<Item>) -> Result<(), Item> {
+    drop(fallible());
+    std::mem::drop(fallible());
+    core::mem::drop(fallible());
+    mem::drop(fallible());
+    drop(fallible()?);
+    drop(format!("x"));
+    drop(items.len());
+    Ok(())
+}
+fn main() {}

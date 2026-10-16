@@ -1,0 +1,14 @@
+macro_rules! die {
+    () => {
+        panic!()
+    };
+}
+macro_rules! first {
+    ($value:expr) => {
+        $value.unwrap()
+    };
+}
+fn local() {
+    die!();
+}
+fn main() {}

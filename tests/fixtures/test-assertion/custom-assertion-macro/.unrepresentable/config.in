@@ -1,0 +1,8 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+assertion-macros = ["check_it"]
+
+[member.fx]
+role = "pure"
+

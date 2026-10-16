@@ -1,0 +1,2 @@
+src/main.rs:6:5: discarded-value
+src/main.rs:9:5: discarded-value

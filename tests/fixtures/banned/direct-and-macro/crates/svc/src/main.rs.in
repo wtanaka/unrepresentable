@@ -1,0 +1,6 @@
+fn go() {
+    drop(std::fs::remove_file("x"));
+    drop(std::fs::File::create("x"));
+    log::info!("hello");
+}
+fn main() {}

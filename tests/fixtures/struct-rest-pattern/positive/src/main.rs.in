@@ -1,0 +1,41 @@
+struct Config {
+    host: Host,
+    port: Host,
+}
+struct Host(u32);
+struct Wrapper(Host, Host);
+enum Event {
+    Move { x: Host, y: Host },
+    Pair(Host, Host),
+    Quit,
+}
+fn read(config: Config, wrapper: Wrapper) -> Host {
+    let Config { host, .. } = config;
+    let Wrapper(first, ..) = wrapper;
+    drop(first);
+    host
+}
+fn handle(event: Event) {
+    match event {
+        Event::Move { x, .. } => drop(x),
+        Event::Pair(first, ..) => drop(first),
+        Event::Quit => (),
+    }
+}
+fn each(configs: Vec<Config>) {
+    for Config { host, .. } in configs {
+        drop(host);
+    }
+}
+fn closure() -> impl Fn(Config) -> Host {
+    |Config { host, .. }: Config| host
+}
+fn param(Config { host, .. }: Config) -> Host {
+    host
+}
+fn optional(config: Option<Config>) {
+    if let Some(Config { host, .. }) = config {
+        drop(host);
+    }
+}
+fn main() {}

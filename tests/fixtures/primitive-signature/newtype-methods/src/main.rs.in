@@ -1,0 +1,13 @@
+struct Count(usize);
+impl Count {
+    fn new(value: usize) -> Self {
+        Self(value)
+    }
+    fn get(&self) -> usize {
+        self.0
+    }
+    fn other(&self, value: usize) -> usize {
+        value
+    }
+}
+fn main() {}

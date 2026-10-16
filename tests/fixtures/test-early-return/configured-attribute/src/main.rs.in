@@ -1,0 +1,6 @@
+#[my::test]
+fn custom() {
+    return;
+    assert!(true);
+}
+fn main() {}

@@ -1,0 +1,3 @@
+src/main.rs:5:1: unparsed-macro
+src/main.rs:7:13: unused-underscore-binding
+src/main.rs:12:13: unused-underscore-binding

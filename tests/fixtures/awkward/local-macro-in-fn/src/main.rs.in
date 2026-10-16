@@ -1,0 +1,9 @@
+fn local() {
+    macro_rules! die {
+        () => {
+            panic!()
+        };
+    }
+    die!();
+}
+fn main() {}

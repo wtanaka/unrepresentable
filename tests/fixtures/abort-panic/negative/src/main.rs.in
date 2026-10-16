@@ -1,0 +1,5 @@
+struct Id(u32);
+fn one() -> Result<Id, Id> {
+    Err(Id(1))
+}
+fn main() {}

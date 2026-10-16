@@ -1,0 +1,15 @@
+enum Kind {
+    A,
+    B,
+}
+fn check(kind: Kind) -> Kind {
+    while let Kind::A = kind {
+        break;
+    }
+    let Kind::A = kind else {
+        return Kind::B;
+    };
+    drop(matches!(kind, Kind::B));
+    kind
+}
+fn main() {}

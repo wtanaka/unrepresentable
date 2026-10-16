@@ -1,0 +1,6 @@
+src/main.rs:6:1: unparsed-macro
+src/main.rs:8:18: default-construction
+src/main.rs:14:1: unparsed-macro
+src/main.rs:18:13: default-construction
+src/main.rs:23:14: default-construction
+src/main.rs:31:9: default-construction

@@ -1,0 +1,7 @@
+#[cfg_attr(feature = "a", cfg_attr(feature = "b", allow(dead_code)))]
+struct One;
+#[cfg_attr(feature = "a", cfg_attr(feature = "b", cfg_attr(feature = "c", ignore)))]
+fn two() {}
+#[cfg_attr(feature = "a", derive(Debug))]
+struct Three;
+fn main() {}

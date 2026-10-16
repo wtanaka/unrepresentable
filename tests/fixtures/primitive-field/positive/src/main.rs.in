@@ -1,0 +1,6 @@
+struct Pair {
+    count: u32,
+    name: String,
+    items: Vec<u8>,
+}
+fn main() {}

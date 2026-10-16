@@ -1,0 +1,14 @@
+struct Id(u32);
+fn takes(letter: char) {}
+fn returns() -> char {
+    'a'
+}
+fn predicate(id: &Id) -> bool {
+    true
+}
+#[must_use]
+fn maybe(id: &Id) -> Option<bool> {
+    None
+}
+fn takes_nested(letters: Vec<char>) {}
+fn main() {}

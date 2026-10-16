@@ -1,0 +1,91 @@
+enum Fail {
+    Bad,
+}
+fn ready() -> Result<(), Fail> {
+    Ok(())
+}
+#[test]
+fn bare() {
+    return;
+    assert!(true);
+}
+#[test]
+fn ok_unit() -> Result<(), Fail> {
+    return Ok(());
+    assert!(true);
+}
+#[test]
+fn in_if() {
+    if ready().is_err() {
+        return;
+    }
+    assert!(true);
+}
+#[test]
+fn in_match_arm() {
+    match ready() {
+        Err(_) => return,
+        Ok(()) => {}
+    }
+    assert!(true);
+}
+#[test]
+fn in_loop() {
+    loop {
+        return;
+    }
+    assert!(true);
+}
+#[test]
+fn let_else() {
+    let Ok(()) = ready() else {
+        return;
+    };
+    assert!(true);
+}
+#[test]
+fn let_else_ok() -> Result<(), Fail> {
+    let Ok(()) = ready() else {
+        return Ok(());
+    };
+    assert!(true);
+    Ok(())
+}
+#[tokio::test]
+async fn async_test() {
+    return;
+    assert!(true);
+}
+#[test]
+fn own_return_beside_a_closure() {
+    let run = || {
+        return;
+    };
+    return;
+    assert!(true);
+}
+macro_rules! suite {
+    () => {};
+}
+suite! {
+    #[test]
+    fn in_macro_body() {
+        return;
+        assert!(true);
+    }
+}
+#[test]
+fn ok_value_before_err() -> Result<(), Fail> {
+    if ready().is_err() {
+        return Err(Fail::Bad);
+    }
+    return Ok(());
+    assert!(true);
+}
+#[test]
+fn returns_a_variable() -> Result<(), Fail> {
+    let outcome = ready();
+    return outcome;
+    assert!(true);
+}
+fn main() {}

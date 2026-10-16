@@ -1,0 +1,14 @@
+struct Id(u32);
+fn first(value: Option<Id>) -> Id {
+    value.unwrap()
+}
+fn second(value: Result<Id, Id>) -> Id {
+    value.expect("present")
+}
+fn third(value: Result<Id, Id>) -> Id {
+    value.unwrap_err()
+}
+fn fourth(value: Option<Id>) -> Id {
+    Option::unwrap(value)
+}
+fn main() {}

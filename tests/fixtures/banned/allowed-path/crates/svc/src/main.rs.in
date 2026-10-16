@@ -1,0 +1,4 @@
+fn go() {
+    drop(std::fs::read_to_string("x"));
+}
+fn main() {}

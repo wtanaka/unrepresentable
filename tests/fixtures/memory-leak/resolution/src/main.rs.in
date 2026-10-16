@@ -1,0 +1,29 @@
+use std::boxed::Box as Heap;
+use std::mem as memory;
+use std::mem::ManuallyDrop as Hold;
+use core::mem::ManuallyDrop;
+use std::ffi::OsString;
+use std::path::PathBuf;
+mod elsewhere {
+    pub use std::boxed::Box as Reexported;
+}
+struct Item(u32);
+fn aliased(item: Box<Item>) {
+    Heap::leak(item);
+}
+fn reexported(item: Box<Item>) {
+    elsewhere::Reexported::leak(item);
+}
+fn modules(item: Item) {
+    memory::ManuallyDrop::new(item);
+    Hold::new(Item(1));
+    ManuallyDrop::new(Item(2));
+}
+fn counted(item: OsString, shared: PathBuf) {
+    OsString::leak(item);
+    PathBuf::leak(shared);
+}
+fn full(item: Box<Item>) {
+    alloc::boxed::Box::leak(item);
+}
+fn main() {}

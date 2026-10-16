@@ -1,0 +1,11 @@
+struct Id(u32);
+struct Other(u32);
+fn many(
+    first: Id,
+    second: Id,
+    flag: bool,
+    count: u32,
+) -> Option<Id> {
+    None
+}
+fn main() {}

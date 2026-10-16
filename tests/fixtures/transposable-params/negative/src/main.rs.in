@@ -1,0 +1,5 @@
+struct Id(u32);
+struct Other(u32);
+fn swap(left: Id, right: Other) {}
+fn single(only: Id) {}
+fn main() {}

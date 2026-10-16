@@ -1,0 +1,8 @@
+struct Id(u32);
+fn a(value: Option<Id>) -> Id {
+    match value {
+        Some(id) => id,
+        None => Id(0),
+    }
+}
+fn main() {}

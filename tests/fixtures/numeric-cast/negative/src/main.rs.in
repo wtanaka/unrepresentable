@@ -1,0 +1,6 @@
+fn narrow() {
+    let wide = u64::from(1_u32);
+    let small = u32::try_from(wide);
+    drop(small);
+}
+fn main() {}

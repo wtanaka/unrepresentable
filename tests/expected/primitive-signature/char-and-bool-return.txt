@@ -1,0 +1,5 @@
+src/main.rs:2:4: primitive-signature
+src/main.rs:3:4: primitive-signature
+src/main.rs:6:4: primitive-signature
+src/main.rs:10:4: primitive-signature
+src/main.rs:13:4: primitive-signature

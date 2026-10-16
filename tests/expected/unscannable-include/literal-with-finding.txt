@@ -1,0 +1,1 @@
+src/generated.rs:2:5: abort-panic

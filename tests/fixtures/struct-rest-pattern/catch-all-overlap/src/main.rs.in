@@ -1,0 +1,29 @@
+enum Kind {
+    A,
+    B,
+}
+struct Tagged {
+    kind: Kind,
+    other: Kind,
+}
+enum Event {
+    Move { x: Kind, y: Kind },
+    Quit,
+}
+fn owned_by_catch_all(tagged: Tagged) {
+    match tagged {
+        Tagged { kind: Kind::A, .. } => (),
+        Tagged { kind: Kind::B, .. } => (),
+    }
+}
+fn owned_by_rest(event: Event) {
+    match event {
+        Event::Move { x, .. } => drop(x),
+        Event::Quit => (),
+    }
+}
+fn outside_a_match(tagged: Tagged) -> Kind {
+    let Tagged { kind, .. } = tagged;
+    kind
+}
+fn main() {}

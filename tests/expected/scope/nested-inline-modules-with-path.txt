@@ -1,0 +1,2 @@
+src/outer/inner.rs:2:5: abort-panic
+src/outer/renamed.rs:2:5: abort-panic

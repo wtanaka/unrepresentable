@@ -1,0 +1,25 @@
+use std::mem::ManuallyDrop;
+struct Item(u32);
+struct Held(ManuallyDrop<Item>);
+fn boxed(item: Box<Item>) -> &'static mut Item {
+    Box::leak(item)
+}
+fn counted(item: std::ffi::OsString) {
+    std::ffi::OsString::leak(item);
+}
+fn shared(item: std::path::PathBuf) {
+    std::path::PathBuf::leak(item);
+}
+fn vector(items: Vec<Item>) {
+    Vec::leak(items);
+}
+fn text() {
+    String::leak(String::new());
+}
+fn method(items: Vec<Item>) {
+    items.leak();
+}
+fn wrap(item: Item) -> Held {
+    Held(ManuallyDrop::new(item))
+}
+fn main() {}

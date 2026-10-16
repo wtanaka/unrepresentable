@@ -1,0 +1,13 @@
+fn one() {
+    panic!("boom");
+}
+fn two() {
+    todo!();
+}
+fn three() {
+    unimplemented!();
+}
+fn four() {
+    unreachable!();
+}
+fn main() {}

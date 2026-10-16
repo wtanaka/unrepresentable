@@ -1,0 +1,4 @@
+src/main.rs:6:11: refutable-shortcut
+src/main.rs:9:5: refutable-shortcut
+src/main.rs:12:5: dropped-call-result
+src/main.rs:12:10: refutable-shortcut

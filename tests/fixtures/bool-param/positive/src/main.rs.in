@@ -1,0 +1,3 @@
+fn flag(on: bool) {}
+fn pair(on: &bool) {}
+fn main() {}

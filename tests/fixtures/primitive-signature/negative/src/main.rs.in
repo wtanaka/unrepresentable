@@ -1,0 +1,6 @@
+struct Id(u32);
+fn takes(id: Id) {}
+fn returns() -> Id {
+    Id(0)
+}
+fn main() {}

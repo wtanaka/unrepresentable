@@ -1,0 +1,4 @@
+src/main.rs:5:1: unparsed-macro
+src/main.rs:7:9: dropped-call-result
+src/main.rs:12:9: dropped-call-result
+src/main.rs:16:11: dropped-call-result

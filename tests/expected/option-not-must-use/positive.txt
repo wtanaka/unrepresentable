@@ -1,0 +1,1 @@
+src/main.rs:2:4: option-not-must-use

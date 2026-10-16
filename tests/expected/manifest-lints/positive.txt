@@ -1,0 +1,2 @@
+crates/a/Cargo.toml:1:1: manifest-lints
+crates/b/Cargo.toml:1:1: manifest-lints

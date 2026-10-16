@@ -1,0 +1,11 @@
+// a.unwrap() and panic!() and #[allow(dead_code)] in a comment
+/* block: b.expect("x"); panic!(); */
+/// doc: c.unwrap()
+fn strings() {
+    let raw = r#"panic!() and #[allow(dead_code)] and x.unwrap()"#;
+    let bytes = b"panic!() #[allow(";
+    let hashes = r##"a "# b.unwrap() "##;
+    let plain = "x.expect(\"y\")";
+    drop((raw, bytes, hashes, plain));
+}
+fn main() {}

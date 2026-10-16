@@ -1,0 +1,10 @@
+src/main.rs:3:15: memory-leak
+src/main.rs:4:16: memory-leak
+src/main.rs:12:5: memory-leak
+src/main.rs:15:5: memory-leak
+src/main.rs:18:5: memory-leak
+src/main.rs:19:5: memory-leak
+src/main.rs:20:5: memory-leak
+src/main.rs:23:5: memory-leak
+src/main.rs:24:5: memory-leak
+src/main.rs:27:5: memory-leak

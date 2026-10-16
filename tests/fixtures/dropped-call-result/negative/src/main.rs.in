@@ -1,0 +1,25 @@
+struct Item(u32);
+struct Pair {
+    left: Item,
+    right: Item,
+}
+fn fallible() -> Result<Item, Item> {
+    Ok(Item(1))
+}
+fn named(pair: Pair, item: Item) {
+    let guard = fallible();
+    drop(guard);
+    drop(item);
+    drop(pair.left);
+    drop(&pair.right);
+    drop((Item(2), Item(3)));
+}
+mod mine {
+    pub fn drop<T>(value: T) {
+        let moved = value;
+    }
+    pub fn go() {
+        drop(super::fallible());
+    }
+}
+fn main() {}

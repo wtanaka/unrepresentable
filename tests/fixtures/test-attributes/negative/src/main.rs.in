@@ -1,0 +1,5 @@
+#[test]
+fn quick() {
+    assert!(true);
+}
+fn main() {}

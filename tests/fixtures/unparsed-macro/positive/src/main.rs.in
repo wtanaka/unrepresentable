@@ -1,0 +1,4 @@
+fn go() {
+    weird!(=> ;; Some(1).unwrap() ,, =>);
+}
+fn main() {}

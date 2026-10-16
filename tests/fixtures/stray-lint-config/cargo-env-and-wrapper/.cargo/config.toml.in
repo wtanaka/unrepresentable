@@ -1,0 +1,5 @@
+[env]
+EXTRA = "1"
+
+[build]
+rustdocflags = ["--cfg", "docsrs"]

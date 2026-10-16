@@ -1,0 +1,9 @@
+struct Id(u32);
+fn make() -> Id {
+    Id(1)
+}
+fn one() -> Id {
+    let kept = make();
+    kept
+}
+fn main() {}

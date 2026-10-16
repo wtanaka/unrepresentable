@@ -1,0 +1,11 @@
+#[test]
+#[ignore]
+fn slow() {
+    assert!(true);
+}
+#[test]
+#[should_panic]
+fn dies() {
+    assert!(true);
+}
+fn main() {}

@@ -1,0 +1,12 @@
+src/main.rs:9:5: test-early-return
+src/main.rs:14:5: test-early-return
+src/main.rs:20:9: test-early-return
+src/main.rs:27:19: test-early-return
+src/main.rs:35:9: test-early-return
+src/main.rs:41:26: test-early-return
+src/main.rs:48:26: test-early-return
+src/main.rs:56:5: test-early-return
+src/main.rs:64:5: test-early-return
+src/main.rs:73:9: test-early-return
+src/main.rs:82:5: test-early-return
+src/main.rs:88:5: test-early-return

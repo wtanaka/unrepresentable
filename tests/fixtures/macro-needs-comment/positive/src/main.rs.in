@@ -1,0 +1,7 @@
+proptest! {
+    #[test]
+    fn roundtrip(value in 0..10) {
+        prop_assert!(value < 10);
+    }
+}
+fn main() {}

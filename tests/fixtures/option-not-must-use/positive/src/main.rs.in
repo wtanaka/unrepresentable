@@ -1,0 +1,5 @@
+struct Id(u32);
+fn find() -> Option<Id> {
+    None
+}
+fn main() {}

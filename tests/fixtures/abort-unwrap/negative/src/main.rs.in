@@ -1,0 +1,15 @@
+struct Id(u32);
+// a comment mentioning .unwrap() is not a call
+#[must_use]
+fn first(value: Option<Id>) -> Option<Id> {
+    match value {
+        Some(id) => Some(id),
+        None => None,
+    }
+}
+fn text() {
+    let note = "value.unwrap()";
+    let raw = r#"value.expect("x")"#;
+    drop((note, raw));
+}
+fn main() {}

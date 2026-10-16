@@ -1,0 +1,51 @@
+struct Item(u32);
+#[derive(Clone, Debug)]
+struct Plain {
+    a: Item,
+    b: Item,
+}
+#[derive(Default)]
+enum Mode {
+    #[default]
+    Fast,
+    Slow,
+}
+struct Manual {
+    a: Item,
+    b: Item,
+}
+impl Default for Manual {
+    fn default() -> Self {
+        Manual {
+            a: Item(1),
+            b: Item(2),
+        }
+    }
+}
+fn calls() -> Manual {
+    let first: Manual = Default::default();
+    let second = Manual::default();
+    drop(first);
+    second
+}
+fn updates(old: Manual) -> Manual {
+    Manual { a: Item(3), ..old }
+}
+fn updates_clone(old: &Manual) -> Manual {
+    Manual {
+        a: Item(3),
+        ..old.clone()
+    }
+}
+fn external(path: Item) {
+    let first = syn::MetaList {
+        path,
+        ..Default::default()
+    };
+    let second = Unknown {
+        a: Item(1),
+        ..Default::default()
+    };
+    drop((first, second));
+}
+fn main() {}

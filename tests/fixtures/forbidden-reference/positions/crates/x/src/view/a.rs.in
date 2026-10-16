@@ -1,0 +1,9 @@
+fn bound<T: crate::edit::Form>(t: T) {}
+fn wherec<T>(t: T) where T: crate::edit::Form {}
+fn dynbox(b: Box<dyn crate::edit::Form>) {}
+fn implt(b: impl crate::edit::Form) {}
+fn lit() { let _x = crate::edit::Form { id: 1 }; }
+fn full() { let _y = crate::edit::Form::new(); }
+fn pat(f: Q) { match f { crate::edit::Form { id } => (), } }
+impl crate::edit::Form for Q {}
+fn mac() { crate::edit::form_macro!(); }

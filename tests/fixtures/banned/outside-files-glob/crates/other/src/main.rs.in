@@ -1,0 +1,4 @@
+fn go() {
+    drop(std::fs::write("x", b""));
+}
+fn main() {}

@@ -1,0 +1,4 @@
+#[cfg(all(test, feature = "x"))]
+mod t;
+
+fn main() {}

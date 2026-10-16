@@ -1,0 +1,17 @@
+struct Id(u32);
+use std::num::Wrapping;
+struct Other(u32);
+fn a(left: Id, right: Other) -> Id {
+    Id(left.0.wrapping_add(right.0))
+}
+fn b(left: Id) -> Id {
+    Id(left.0.saturating_sub(1))
+}
+fn c(left: Id) -> Id {
+    Id(left.0.overflowing_mul(2).0)
+}
+fn d() {
+    let wrapped = Wrapping(1_u32);
+    drop(wrapped);
+}
+fn main() {}

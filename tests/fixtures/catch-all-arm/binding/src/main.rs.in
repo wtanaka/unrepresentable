@@ -1,0 +1,14 @@
+enum Kind {
+    A,
+    B,
+}
+fn keep(kind: Kind) -> Kind {
+    kind
+}
+fn wrap(kind: Kind) -> Kind {
+    match kind {
+        Kind::A => Kind::B,
+        other => keep(other),
+    }
+}
+fn main() {}

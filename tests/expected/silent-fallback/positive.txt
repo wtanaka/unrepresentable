@@ -1,0 +1,5 @@
+src/main.rs:3:11: silent-fallback
+src/main.rs:6:11: silent-fallback
+src/main.rs:10:11: silent-fallback
+src/main.rs:15:11: silent-fallback
+src/main.rs:18:11: silent-fallback

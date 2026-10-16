@@ -1,0 +1,6 @@
+src/main.rs:3:8: bool-param
+src/main.rs:3:8: option-not-must-use
+src/main.rs:4:8: primitive-signature
+src/main.rs:7:8: bool-param
+src/main.rs:7:8: option-not-must-use
+src/main.rs:10:8: primitive-signature

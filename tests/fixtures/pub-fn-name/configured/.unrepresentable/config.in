@@ -1,0 +1,8 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+fn-name-suffixes = ["_hack"]
+
+[member.fx]
+role = "pure"
+

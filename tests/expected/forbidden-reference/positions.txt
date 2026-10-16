@@ -1,0 +1,11 @@
+crates/x/src/view/a.rs:1:13: forbidden-reference
+crates/x/src/view/a.rs:2:29: forbidden-reference
+crates/x/src/view/a.rs:3:22: forbidden-reference
+crates/x/src/view/a.rs:4:18: forbidden-reference
+crates/x/src/view/a.rs:5:16: unused-underscore-binding
+crates/x/src/view/a.rs:5:21: forbidden-reference
+crates/x/src/view/a.rs:6:17: unused-underscore-binding
+crates/x/src/view/a.rs:6:22: forbidden-reference
+crates/x/src/view/a.rs:7:26: forbidden-reference
+crates/x/src/view/a.rs:8:6: forbidden-reference
+crates/x/src/view/a.rs:9:12: banned:no-form-macro

@@ -1,0 +1,2 @@
+struct Ratio(u32);
+fn main() {}

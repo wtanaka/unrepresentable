@@ -1,0 +1,6 @@
+enum Switch {
+    On,
+    Off,
+}
+fn flag(on: Switch) {}
+fn main() {}

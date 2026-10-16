@@ -1,0 +1,5 @@
+struct Id(u32);
+fn keep(id: Id) -> Id {
+    id
+}
+fn main() {}

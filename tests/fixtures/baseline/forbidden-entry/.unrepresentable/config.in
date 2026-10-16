@@ -1,0 +1,12 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+
+[member.fx]
+role = "pure"
+
+[[baseline-entry]]
+rule = "abort-panic"
+file = "src/main.rs"
+item = "fn held"
+index = 0

@@ -1,0 +1,15 @@
+use core::mem as memory;
+use std::mem::drop as release;
+mod elsewhere {
+    pub use std::mem::drop as dropped;
+}
+struct Item(u32);
+fn fallible() -> Result<Item, Item> {
+    Ok(Item(1))
+}
+fn aliased() {
+    release(fallible());
+    memory::drop(fallible());
+    elsewhere::dropped(fallible());
+}
+fn main() {}

@@ -1,0 +1,1 @@
+crates/svc/src/main.rs:2:5: dropped-call-result

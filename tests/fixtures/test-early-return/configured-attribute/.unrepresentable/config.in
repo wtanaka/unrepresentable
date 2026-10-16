@@ -1,0 +1,7 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+test-attributes = ["my::test"]
+
+[member.fx]
+role = "pure"

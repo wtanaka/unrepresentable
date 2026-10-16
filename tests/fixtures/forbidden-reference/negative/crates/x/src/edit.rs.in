@@ -1,0 +1,2 @@
+pub(crate) struct Form;
+pub(crate) struct Plain;

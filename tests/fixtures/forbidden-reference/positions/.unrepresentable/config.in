@@ -1,0 +1,15 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+
+[member.x]
+role = "pure"
+
+[[forbidden-reference]]
+files = ["crates/x/src/view/**"]
+must-not-name = ["crate::edit::Form"]
+
+[[ban]]
+id = "no-form-macro"
+files = ["crates/x/src/view/**"]
+macros = ["crate::edit::form_macro"]

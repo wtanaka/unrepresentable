@@ -1,0 +1,41 @@
+struct Item(u32);
+fn fallible() -> Result<Item, Item> {
+    Ok(Item(1))
+}
+fn consume<T>(value: T) {
+    drop(value);
+}
+fn work() {}
+fn handled(result: Result<Item, Item>, option: Option<Item>) {
+    match result {
+        Ok(item) => consume(item),
+        Err(reason) => consume(reason),
+    }
+    match result {
+        Ok(item) => consume(item),
+        Err(_) => work(),
+    }
+    match result {
+        Ok(item) => consume(item),
+        Err(_) => {
+            work();
+        }
+    }
+    match result {
+        Ok(item) => consume(item),
+        Err(named) => (),
+    }
+    if let Ok(item) = fallible() {
+        consume(item);
+    } else {
+        work();
+    }
+    if let Some(item) = option {
+        consume(item);
+    }
+    match option {
+        Some(item) => consume(item),
+        None => (),
+    }
+}
+fn main() {}

@@ -1,0 +1,18 @@
+fn make() -> Kind {
+    Kind::A
+}
+enum Kind {
+    A,
+}
+enum Fail {
+    Bad,
+}
+fn check() -> Result<(), Fail> {
+    Ok(())
+}
+#[test]
+fn only_question() -> Result<(), Fail> {
+    check()?;
+    Ok(())
+}
+fn main() {}

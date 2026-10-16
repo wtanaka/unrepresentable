@@ -1,0 +1,13 @@
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn holds() {
+        assert!(true);
+    }
+}
+
+fn production() {
+    assert!(true);
+}
+
+fn main() {}

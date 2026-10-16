@@ -1,0 +1,8 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+
+[member.fx]
+role = "pure"
+newtypes = [{ type = "Count", methods = ["new", "get"] }]
+

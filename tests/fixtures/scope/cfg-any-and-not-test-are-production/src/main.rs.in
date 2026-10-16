@@ -1,0 +1,6 @@
+#[cfg(any(test, feature = "x"))]
+mod maybe;
+#[cfg(not(test))]
+mod only;
+
+fn main() {}

@@ -1,0 +1,2 @@
+benches/speed.rs:2:5: abort-panic
+examples/demo.rs:2:5: abort-panic

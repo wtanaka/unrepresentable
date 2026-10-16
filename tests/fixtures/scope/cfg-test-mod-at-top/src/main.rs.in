@@ -1,0 +1,8 @@
+#[cfg(test)]
+mod t;
+
+fn production() {
+    panic!("production");
+}
+
+fn main() {}

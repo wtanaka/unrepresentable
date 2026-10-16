@@ -1,0 +1,5 @@
+src/main.rs:1:23: unordered-collection
+src/main.rs:2:23: unordered-collection
+src/main.rs:4:12: unordered-collection
+src/main.rs:8:15: unordered-collection
+src/main.rs:8:29: unordered-collection

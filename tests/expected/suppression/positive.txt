@@ -1,0 +1,4 @@
+src/main.rs:1:1: suppression
+src/main.rs:3:1: suppression
+src/main.rs:5:1: suppression
+src/main.rs:7:1: suppression

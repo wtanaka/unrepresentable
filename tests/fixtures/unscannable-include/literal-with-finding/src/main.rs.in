@@ -1,0 +1,2 @@
+include!("generated.rs");
+fn main() {}

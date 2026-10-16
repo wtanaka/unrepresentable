@@ -1,0 +1,2 @@
+src/main.rs:2:1: unparsed-macro
+src/main.rs:6:34: abort-unwrap

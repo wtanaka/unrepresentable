@@ -1,0 +1,12 @@
+enum Kind {
+    A,
+    B,
+}
+fn text() -> Kind {
+    let word = "a";
+    match word {
+        "a" => Kind::A,
+        _ => Kind::B,
+    }
+}
+fn main() {}

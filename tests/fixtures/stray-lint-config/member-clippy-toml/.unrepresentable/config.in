@@ -1,0 +1,7 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+
+[member.a]
+role = "pure"
+

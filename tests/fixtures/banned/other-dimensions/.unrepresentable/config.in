@@ -1,0 +1,18 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+
+[member.fx]
+role = "pure"
+
+[[ban]]
+id = "no-display"
+impl-traits = ["std::fmt::Display"]
+
+[[ban]]
+id = "no-default"
+derives = ["Default"]
+
+[[ban]]
+id = "no-clone"
+methods = ["clone"]

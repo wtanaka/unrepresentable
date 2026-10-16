@@ -1,0 +1,50 @@
+enum Kind {
+    A,
+    B,
+}
+fn fallible() -> Result<Kind, Kind> {
+    Ok(Kind::A)
+}
+fn peek() -> Result<Kind, Kind> {
+    Ok(Kind::B)
+}
+fn consume<T>(value: T) {
+    drop(value);
+}
+fn work() {}
+fn flagged() {
+    if let Ok(item) = fallible() && peek().is_ok() {
+        consume(item);
+    }
+    if peek().is_ok() && let Ok(item) = fallible() {
+        consume(item);
+    }
+    if peek().is_ok() && let Ok(item) = fallible() && peek().is_ok() {
+        consume(item);
+    }
+    while let Ok(item) = fallible() && peek().is_ok() {
+        consume(item);
+    }
+    if let Ok(first) = fallible() && let Ok(second) = peek() {
+        consume((first, second));
+    }
+}
+fn handled(option: Option<Kind>) {
+    if let Ok(item) = fallible() && peek().is_ok() {
+        consume(item);
+    } else {
+        work();
+    }
+    if let Some(item) = option && peek().is_ok() {
+        consume(item);
+    }
+    if peek().is_ok() && fallible().is_ok() {
+        work();
+    }
+}
+fn owned_by_refutable_shortcut() {
+    if let Ok(Kind::A) = fallible() && peek().is_ok() {
+        work();
+    }
+}
+fn main() {}

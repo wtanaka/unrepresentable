@@ -1,0 +1,6 @@
+src/main.rs:2:5: dropped-call-result
+src/main.rs:2:10: ambient-input
+src/main.rs:3:5: dropped-call-result
+src/main.rs:3:10: ambient-input
+src/main.rs:4:5: dropped-call-result
+src/main.rs:4:10: ambient-input

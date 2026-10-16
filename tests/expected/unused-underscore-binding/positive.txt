@@ -1,0 +1,7 @@
+src/main.rs:13:9: unused-underscore-binding
+src/main.rs:14:9: unused-underscore-binding
+src/main.rs:15:16: unused-underscore-binding
+src/main.rs:17:29: unused-underscore-binding
+src/main.rs:22:10: unused-underscore-binding
+src/main.rs:23:14: unused-underscore-binding
+src/main.rs:26:9: unused-underscore-binding

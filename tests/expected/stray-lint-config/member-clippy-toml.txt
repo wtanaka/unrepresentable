@@ -1,0 +1,1 @@
+crates/a/clippy.toml:1:1: stray-lint-config

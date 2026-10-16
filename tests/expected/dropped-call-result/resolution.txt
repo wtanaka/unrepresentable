@@ -1,0 +1,3 @@
+src/main.rs:11:5: dropped-call-result
+src/main.rs:12:5: dropped-call-result
+src/main.rs:13:5: dropped-call-result

@@ -1,0 +1,7 @@
+src/main.rs:16:12: swallowed-error
+src/main.rs:19:30: swallowed-error
+src/main.rs:22:30: swallowed-error
+src/main.rs:25:15: swallowed-error
+src/main.rs:28:12: swallowed-error
+src/main.rs:28:42: swallowed-error
+src/main.rs:46:8: refutable-shortcut

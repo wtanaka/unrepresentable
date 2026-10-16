@@ -1,0 +1,13 @@
+enum Kind {
+    A,
+    B,
+}
+use Kind::*;
+fn pick(kind: Kind) -> Kind {
+    match kind {
+        A => B,
+        B => A,
+        rest => rest,
+    }
+}
+fn main() {}

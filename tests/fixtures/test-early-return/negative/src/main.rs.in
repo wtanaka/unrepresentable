@@ -1,0 +1,97 @@
+enum Fail {
+    Bad,
+}
+fn ready() -> Result<(), Fail> {
+    Ok(())
+}
+fn helper() {
+    return;
+}
+fn not_a_test() -> Result<(), Fail> {
+    return Ok(());
+}
+#[test]
+fn panics_in_let_else() {
+    let Ok(()) = ready() else {
+        panic!("not ready");
+    };
+    assert!(true);
+}
+#[test]
+fn question_mark() -> Result<(), Fail> {
+    ready()?;
+    assert!(true);
+    Ok(())
+}
+#[test]
+fn return_after_assertion() {
+    assert!(true);
+    if ready().is_err() {
+        return;
+    }
+}
+#[test]
+fn return_in_closure() {
+    let run = || {
+        return;
+    };
+    run();
+    assert!(true);
+}
+#[test]
+fn return_in_async_block() {
+    let run = async {
+        return;
+    };
+    assert!(true);
+}
+#[test]
+fn return_in_nested_fn() {
+    fn inner() {
+        return;
+    }
+    inner();
+    assert!(true);
+}
+#[test]
+fn continue_is_not_a_return() {
+    for _ in 0..2 {
+        if ready().is_err() {
+            continue;
+        }
+    }
+    assert!(true);
+}
+#[test]
+fn uses_a_helper() {
+    helper();
+    assert!(true);
+}
+#[test]
+fn return_err_before_assertion() -> Result<(), Fail> {
+    if ready().is_err() {
+        return Err(Fail::Bad);
+    }
+    assert!(true);
+    Ok(())
+}
+#[test]
+fn return_err_paths() -> Result<(), Fail> {
+    if ready().is_err() {
+        return core::result::Result::Err(Fail::Bad);
+    }
+    if ready().is_err() {
+        return Result::Err(Fail::Bad);
+    }
+    assert!(true);
+    Ok(())
+}
+#[test]
+fn let_else_returns_err() -> Result<(), Fail> {
+    let Ok(()) = ready() else {
+        return Err(Fail::Bad);
+    };
+    assert!(true);
+    Ok(())
+}
+fn main() {}

@@ -1,0 +1,5 @@
+use std::fs as f;
+fn go() {
+    drop(f::write("x", b""));
+}
+fn main() {}

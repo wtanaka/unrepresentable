@@ -1,0 +1,36 @@
+use std::result::Result as Res;
+mod mine {
+    pub struct Item(pub u32);
+    pub enum Outcome {
+        Err(Item),
+        Fine,
+    }
+}
+mod shadow {
+    use super::mine::Outcome;
+    use super::mine::Outcome::{Err, Fine};
+    pub fn go(outcome: Outcome) {
+        match outcome {
+            Err(_) => (),
+            Fine => (),
+        }
+        match outcome {
+            Outcome::Err(_) => (),
+            Outcome::Fine => (),
+        }
+    }
+}
+fn consume<T>(value: T) {
+    drop(value);
+}
+fn renamed(result: Res<mine::Item, mine::Item>) {
+    match result {
+        Res::Ok(item) => consume(item),
+        Res::Err(_) => (),
+    }
+    match result {
+        Ok(item) => consume(item),
+        core::result::Result::Err(_) => (),
+    }
+}
+fn main() {}

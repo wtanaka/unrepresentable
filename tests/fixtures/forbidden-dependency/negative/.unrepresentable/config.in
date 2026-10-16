@@ -1,0 +1,13 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+
+[member.a]
+role = "pure"
+
+[member.b]
+role = "pure"
+
+[[forbidden-dependency]]
+crate = "b"
+must-not-reach = ["a"]

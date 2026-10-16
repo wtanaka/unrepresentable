@@ -1,0 +1,17 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+
+[member.svc]
+role = "shell"
+ambient = [{ path = "std::fs", files = ["crates/**"] }]
+
+[member.other]
+role = "shell"
+ambient = [{ path = "std::fs", files = ["crates/**"] }]
+
+[[ban]]
+id = "no-io-writes"
+files = ["crates/svc/src/**"]
+paths = ["std::fs::write", "std::fs::remove_file", "std::fs::File::create", "std::fs::OpenOptions"]
+macros = ["log::*"]

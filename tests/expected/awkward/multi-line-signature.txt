@@ -1,0 +1,4 @@
+src/main.rs:3:4: bool-param
+src/main.rs:3:4: option-not-must-use
+src/main.rs:3:4: primitive-signature
+src/main.rs:3:4: transposable-params

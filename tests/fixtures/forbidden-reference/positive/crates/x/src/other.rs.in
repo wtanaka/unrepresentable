@@ -1,0 +1,2 @@
+use crate::edit::Form;
+fn outside(form: &Form) {}
