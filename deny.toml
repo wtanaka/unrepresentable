@@ -1,0 +1,52 @@
+# cargo-deny policy for the dependency set of this repository.
+#
+# The checks split by what they need:
+#   licenses, bans, sources   read only Cargo.toml and Cargo.lock; they run offline,
+#                             also where the network is not allowed
+#   advisories                need the RustSec advisory database, so they need the
+#                             network; they run only where the network is allowed,
+#                             for example a scheduled job
+# See ci/checks.sh (`deny` and `deny-advisories`) and ci/README.md.
+
+[graph]
+# With no `targets` list, every target platform is judged, not only the host.
+# Features: the default features of each workspace member, as built.
+all-features = false
+no-default-features = false
+
+[advisories]
+# A vulnerability or a yanked crate fails. Unmaintained crates fail too, in
+# every position of the tree, not only the direct dependencies.
+yanked = "deny"
+unmaintained = "all"
+unsound = "all"
+ignore = []
+
+[licenses]
+# Only the licenses the dependency set and this repository need: every
+# dependency is MIT or "MIT OR Apache-2.0" (or MIT/Unlicense), and unicode-ident
+# also needs Unicode-3.0. Apache-2.0 is allowed because the workspace crates
+# themselves are dual licensed "MIT OR Apache-2.0", and cargo-deny checks them
+# too. Adding a license is a change to a judge path and needs human approval.
+allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+confidence-threshold = 0.93
+
+# Workspace crates marked `publish = false` need no license (the canaries crate
+# holds test inputs and is never published).
+[licenses.private]
+ignore = true
+
+[bans]
+# One version of each crate, and no wildcard requirements. A `skip` needs a
+# reason (and an entry here is a judge-path change).
+multiple-versions = "deny"
+wildcards = "deny"
+highlight = "all"
+skip = []
+
+[sources]
+# Crates come from crates.io only: no git dependencies, no other registries.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

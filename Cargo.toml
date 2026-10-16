@@ -15,7 +15,7 @@ categories = ["development-tools", "command-line-utilities"]
 # tests/ is left out on purpose: its helpers read the `[workspace.lints*]`
 # tables of this repository's root manifest, which `cargo package` rewrites
 # into per-crate `[lints]` tables, so the tests cannot pass from the unpacked
-# crate. canaries/ belongs to the repository, not to the crate.
+# crate. canaries/ and ci/ belong to the repository, not to the crate.
 include = [
   "src/**",
   "/Cargo.toml",
@@ -25,6 +25,7 @@ include = [
   "/README.md",
   "/clippy.toml",
   "/rust-toolchain.toml",
+  "/deny.toml",
   ".unrepresentable/**",
 ]
 
