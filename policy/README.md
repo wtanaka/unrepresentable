@@ -94,8 +94,12 @@ Reason codes: `JUDGE_MODIFIED`, `LINT_LOWERED`, `DEPENDENCY_CHANGED`,
 `OTHER_PATH_CHANGED`, `ZIZMOR_FINDING`, `DIFF_UNPARSABLE` (classify);
 `CONFIG_LOOSENED`, `LEDGER_ROW_ADDED`, `BASELINE_GREW`, `TOOL_APPROVAL`
 (self-lint); `LOST_FINDING` (differential); `LOST_FINDING_HIDDEN`
-(differential-hidden); `MUTANT_SURVIVED` (mutants). Blockers that cannot be
-approved: `INPUT_JOB_FAILED`, `RESULT_UNPARSABLE`, `SETTINGS_AUDIT`.
+(differential-hidden); `MUTANT_SURVIVED` and `MUTANTS_NOT_RUN` (mutants).
+`MUTANTS_NOT_RUN` is shown as
+"`cargo-mutants selected no mutant for a diff that changes Rust lines; no mutation result exists`",
+and approving it accepts Rust changes that no mutation test examined (see "A
+missing `mutants.out`"). Blockers that cannot be approved: `INPUT_JOB_FAILED`,
+`RESULT_UNPARSABLE`, `SETTINGS_AUDIT`.
 
 Verdict is `auto` only with no reasons and no blockers. Otherwise `needs-human`;
 with a blocker it is also not approvable. A failed `head-checks` or `self-lint`
@@ -105,14 +109,14 @@ Approval (policy-review.yml and policy-sweep.yml), all of: the reviewer's latest
 effective review is APPROVED on a commit equal to the current head; the reviewer
 is a code owner (BASE branch CODEOWNERS) of every path-based reason, and of
 `policy/**` for non-path reasons (`LOST_FINDING`, `LOST_FINDING_HIDDEN`,
-`MUTANT_SURVIVED`, `CONFIG_LOOSENED`, `LEDGER_ROW_ADDED`, `BASELINE_GREW`,
-`TOOL_APPROVAL`, `UNSAFE_PATH_CHARS`); the reviewer is not the PR author, did
-not author or commit any commit of the PR (read from `GET /pulls/N/commits`: a
-code owner who pushes to someone else's pull request cannot then approve the
-result), and is not a bot; all input jobs of the policy run that produced the
-verdict succeeded (re-read through the jobs API). Comments such as `/approve`
-are never read. Humans merge approved PRs themselves; the App merges only `auto`
-PRs.
+`MUTANT_SURVIVED`, `MUTANTS_NOT_RUN`, `CONFIG_LOOSENED`, `LEDGER_ROW_ADDED`,
+`BASELINE_GREW`, `TOOL_APPROVAL`, `UNSAFE_PATH_CHARS`); the reviewer is not the
+PR author, did not author or commit any commit of the PR (read from
+`GET /pulls/N/commits`: a code owner who pushes to someone else's pull request
+cannot then approve the result), and is not a bot; all input jobs of the policy
+run that produced the verdict succeeded (re-read through the jobs API). Comments
+such as `/approve` are never read. Humans merge approved PRs themselves; the App
+merges only `auto` PRs.
 
 Re-evaluation also compares the stored verdict with the world as it is now. The
 verdict records the base commit and the policy commit it was made with; `review`
@@ -149,10 +153,32 @@ the App's identity, so nothing a PR can create is read back as trusted.
    - `hidden-corpus`: default branch only. Secrets `HIDDEN_CORPUS_URL` (https
      tarball URL) and `HIDDEN_CORPUS_TOKEN`. Used only by `differential-hidden`,
      which never fetches or reads the head and runs both binaries only inside
-     `sandbox.sh`.
+     `sandbox.sh`. The job always runs on every pull request run and needs these
+     two secrets. A skipped, failed or cancelled `differential-hidden` (for
+     example because a secret is missing) is an `INPUT_JOB_FAILED` blocker like
+     any other input job.
    - `audit`: default branch only. Secret `AUDIT_TOKEN`: a fine-grained,
      read-only token with Administration (read), Metadata (read), Contents
-     (read), Actions (read). No PR job uses this environment.
+     (read), Actions (read). No PR job uses this environment. The API returns
+     the repository merge settings (`allow_squash_merge`, `allow_merge_commit`,
+     `allow_rebase_merge`, `allow_auto_merge`) only to a caller with push
+     access, so this read-only token receives `null` for them. The audit does
+     not report a missing or null value for those four keys as drift and still
+     reports a value that differs. The squash-only requirement is also enforced
+     by the `allowed_merge_methods` parameter of the ruleset, which the audit
+     compares. The four settings are applied by the setup and checked by hand.
+     The audit also reads the newest `merge_commits.recent` commits of the
+     default branch and reports each commit that has no pull request and each
+     automatic merge without a clean verdict block. The key
+     `merge_commits.exempt_through` in `settings.json` names the last of the
+     commits that were pushed directly to the default branch during bootstrap,
+     before the rulesets were applied. The first commit of the listing (newest
+     first) with that sha and every older commit after it are exempt from both
+     rules. Every commit after it is checked. The key is optional: without it,
+     no commit is exempt. When the sha is not within the window, nothing is
+     exempt. A value that is not a 40-digit lowercase hexadecimal sha makes the
+     audit fail with an error. The exemption covers only the bootstrap commits
+     and MUST NOT be extended to a later commit without review.
    - `release`: deployment tags `v*` only (one tag policy with the pattern
      `v*`), and **required reviewers are mandatory**: a crates.io publish cannot
      be undone, and `assemble` and `publish-crate` both run in this environment,
@@ -265,7 +291,11 @@ the App's identity, so nothing a PR can create is read back as trusted.
       the gate, so it is documented instead.
 7. Run `settings-audit` once by hand (workflow_dispatch). `policy-evaluate`
    refuses to merge and blocks approval unless the latest audit succeeded within
-   24 hours.
+   24 hours. Commits pushed directly to the default branch before step 5 would
+   fail the commit check of the audit until they leave its window, so
+   `merge_commits.exempt_through` in `settings.json` names the last of them.
+   This exemption is for the bootstrap commits only and MUST NOT be extended
+   without review.
 8. Replace `@wtanaka` in `.github/CODEOWNERS` if maintainers change. Teams are
    not supported (the App has no organisation permission to resolve membership).
 
@@ -430,16 +460,34 @@ Bootstrap notes:
   command-line range, which may be empty). The corpus is scanned, not built:
   each crate found in the input (a directory with `Cargo.toml` and `src/lib.rs`
   or `src/main.rs`) becomes a member with a generated manifest that has no
-  dependencies, and an input with no crate becomes one member whose `src/lib.rs`
-  names every `.rs` file with `#[path]`. The lock is fixed text for those
-  manifests, so no network is used. BOTH binaries run through the sandbox prefix
-  (`--prefix` is required), each in its own writable scratch build directory
-  with its own `HOME` and `CARGO_HOME` inside it (passed as `env NAME=VALUE`
-  words, since the sandbox clears the environment), and the child also gets a
-  `safe.directory` entry for the workspace through `GIT_CONFIG_*`. What remains:
-  the manifests, features and dependencies of the corpus crates are not seen, so
-  only the findings of the scan and of lint coverage on the generated workspace
-  are compared; the move/rename and approval checks report no change at all.
+  dependencies and `build = false`, and an input with no crate becomes one
+  member whose `src/lib.rs` names every `.rs` file with `#[path]`.
+  `build = false` is needed because cargo runs a `build.rs` at the crate root
+  even when the manifest does not name it, and `cargo clippy` (which the tool
+  runs for the lint tables) builds and runs it first: `proc-macro2` of the
+  public corpus has one, and that run failed in the sandbox, so the base binary
+  exited 2 on every pull request. This holds for the generated workspaces only.
+  A trusted input (the fixtures, the public corpus or the hidden corpus) that
+  has its own `.unrepresentable/config` is used as it is, with its own manifest,
+  so its `build.rs` can still run under `cargo clippy` in the sandbox. The lock
+  is fixed text for the generated manifests, so no network is used. BOTH
+  binaries run through the sandbox prefix (`--prefix` is required), each in its
+  own writable scratch build directory with its own `HOME` and `CARGO_HOME`
+  inside it (passed as `env NAME=VALUE` words, since the sandbox clears the
+  environment), and the child also gets a `safe.directory` entry for the
+  workspace through `GIT_CONFIG_*`. What remains: the manifests, features and
+  dependencies of the corpus crates are not seen, so only the findings of the
+  scan and of lint coverage on the generated workspace are compared; the
+  move/rename and approval checks report no change at all.
+- A binary that fails on an input is an error for that input, never a pass, and
+  the error says why: `<which> binary exit N on input NAME: ` followed by the
+  first twelve non-empty lines of the binary's standard error (each cut to 200
+  characters, printable ASCII only, joined with `|`). The lines are kept for the
+  public corpus and for the head's own inputs, which are not secret. For the
+  hidden corpus only the exit status is printed, because the tool's message may
+  quote what it read. The text is untrusted (it may come from the head binary):
+  it is cut, stripped of every control character and put after fixed text on a
+  single line, so it cannot start a workflow command in the job log.
 - What the differential can and cannot prove. The differential is a black-box
   comparison: it shows that the head binary reports every finding the base
   binary reports on the inputs it was given. The differential cannot show that
@@ -479,6 +527,81 @@ Bootstrap notes:
   a pull request can still learn is the number of findings its own binary lost,
   which is as much as it can send by choosing what the head binary prints; the
   head binary has no network and no way to write outside its sandbox.
+
+## A missing `mutants.out`
+
+`cargo mutants --in-diff` writes no `mutants.out` when it selects no mutant, and
+it exits 0. That happens for an empty diff ("Diff file is empty"), for text that
+is not a diff, for a diff of files that are not Rust, and for a diff of Rust
+lines that holds nothing to mutate: a change of comments only, or of test code
+only (code under `#[cfg(test)]` is never mutated). Every pull request that
+changes nothing under `src/` is in the first case, and the job used to fail with
+"No such file or directory" for it.
+
+A diff that only removes lines is not in this set. `cargo mutants` also tests
+the lines next to a deleted line, so a removal inside a function selects
+mutants, and a deleted file removes lines too. A missing result for such a diff
+is not "zero mutants".
+
+RFC-style rules for
+`unrepresentable-policy head-jobs mutants <mutants.out> <exit> <base> <head> <out> <pr.diff>`:
+
+- The tool MUST read `<pr.diff>` first; a diff file that cannot be read is an
+  error. It is the file the workflow made in `$RUNNER_TEMP` with
+  `git diff --text --no-ext-diff --no-textconv BASE...HEAD -- src`, before any
+  head code ran. The copy in `/opt/sandbox/data` is what `cargo mutants` reads;
+  `stage-sandbox.sh` installs it root-owned with mode 0644 in a root-owned
+  directory, so head code, which runs as an unprivileged user, cannot change it
+  either. The runner file is used because it is the original: the tool reads it
+  on the runner, outside the sandbox directory, so the decision does not depend
+  on the permissions of that directory staying as they are.
+- When the output directory is missing, the tool MUST report a clean result (no
+  reasons, `reported 0`, `exit 0`) only if `cargo mutants` exited 0 AND the diff
+  adds no line and removes no line in any `.rs` file (an empty diff, a rename or
+  mode change without a content change, a change of files that are not `.rs`).
+  Every `+` or `-` line under a `.rs` path counts, a pure deletion of a whole
+  file included; so does a rename whose changed lines have a `.rs` path on
+  either side.
+- When the output directory is missing, `cargo mutants` exited 0 and the diff
+  does add or remove a line of a `.rs` file, the job MUST succeed with the
+  artifact that carries the one reason `MUTANTS_NOT_RUN` ("`cargo-mutants`
+  selected no mutant for a diff that changes Rust lines; no mutation result
+  exists"; counts `exit 0`, `reported 1`). The reason names no path, so a code
+  owner of `policy/**` must approve it, like `MUTANT_SURVIVED`; it is shown with
+  a warning sign, and approving it accepts Rust changes that no mutation test
+  examined. It is never produced for another exit status. It replaces a failed
+  job (`INPUT_JOB_FAILED`, which no one can approve) for a test-only or
+  comment-only change under `src/`, which already needs a human
+  (`RULES_CODE_CHANGED`).
+- In every other case (any other exit status, or a diff that is not understood)
+  the job fails and no result is written.
+- Why the output cannot decide: "no mutant selected" looks the same whether the
+  diff selected none or head code made `cargo mutants` select none. A
+  `.cargo/mutants.toml` with `exclude_globs = ["src/**"]` in the head gives
+  exactly "No mutants to filter", exit 0 and no directory, for a diff that does
+  change Rust lines. So a missing result is believed as "zero mutants" only on
+  the diff, which head code cannot touch, and otherwise needs a human. A diff is
+  understood only when every line is a header git writes outside a hunk or a
+  line of a hunk (counted from the `@@` headers, so a `+++ ...` line inside a
+  hunk is an added line and a `+++` header is not). `Binary files ... differ`
+  and a hunk that is longer or shorter than its header are not understood. A
+  `\ No newline at end of file` line is read only directly after a line of a
+  hunk (inside the hunk, or right after its last line) and takes nothing from
+  the sizes of the hunk; anywhere else it is not understood.
+- `--text` is required: a `.gitattributes` of the head with `src/** -diff` makes
+  plain `git diff` print `Binary files differ` for the changed file, which would
+  give an empty diff for a pull request that does change code. The tool also
+  fails on that text, as a second line of defence.
+- `cargo mutants` runs with `--no-config`, so a `.cargo/mutants.toml` of the
+  head (`exclude_globs`, `exclude_re`, `test_tool`, extra test arguments) is not
+  read. The repository has no such file of its own.
+- The exit status of `cargo mutants` is still cross-checked as before: 0 (no
+  missed mutant), 2 (missed; `missed.txt` must list one), 3 (timeouts;
+  `timeout.txt` must list one) are reportable; 1 (usage error) and 4 (baseline
+  failure) and every other status fail the job.
+- What this does not cover, and the job still accepts: a head can mark its own
+  code with `#[mutants::skip]`, and code under `#[cfg(test)]` is never mutated.
+  A change under `src/` needs a human (`RULES_CODE_CHANGED`) for that reason.
 
 ## What each job is allowed to do
 
@@ -573,8 +696,11 @@ Bootstrap notes:
   exit 0 and nothing else is: a missing, repeated, unknown, failed or garbled
   line, or a status file that cannot be read, fails the job. `mutants` fails
   when `cargo mutants` exits 2 or 3 and the list it promises is missing or
-  empty, and when a list cannot be read or is not a plain file. `owntree` runs
-  over `$BASE_SHA...HEAD`. `deny-advisories` is not in the list: it needs the
+  empty, and when a list cannot be read or is not a plain file. A missing
+  `mutants.out` is a clean result only for exit 0 and a diff that changes no
+  Rust line, and gives the approvable reason `MUTANTS_NOT_RUN` for exit 0 and a
+  diff that does (see "A missing `mutants.out`" above). `owntree` runs over
+  `$BASE_SHA...HEAD`. `deny-advisories` is not in the list: it needs the
   advisory database, so it runs only in the push jobs and the hourly sweep.
 - `skip-check` and the other push jobs (`push`, `workflow_dispatch`): the pushed
   tree is the default branch, so it is trusted. These jobs have `contents: read`

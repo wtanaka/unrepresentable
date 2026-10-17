@@ -165,6 +165,7 @@ fn allows_text(code: Code) -> Text {
         Code::LostFinding => "Approving accepts that the changed tool no longer reports a finding the previous tool reported.",
         Code::LostFindingHidden => "Approving accepts that the changed tool no longer reports findings the previous tool reported on the hidden corpus.",
         Code::MutantSurvived => "Approving accepts a code change that no test detects.",
+        Code::MutantsNotRun => "Approving accepts Rust changes that no mutation test examined, so the tests may not detect a wrong change.",
     })
 }
 
@@ -219,7 +220,8 @@ fn allows(reason: &Reason) -> Text {
         | Code::ToolApproval
         | Code::LostFinding
         | Code::LostFindingHidden
-        | Code::MutantSurvived => return generic,
+        | Code::MutantSurvived
+        | Code::MutantsNotRun => return generic,
     }
     let Some((label, old, new)) = lint_parts(&reason.evidence) else {
         return generic;

@@ -162,6 +162,23 @@ fn warn_codes_use_warning_sign() {
 }
 
 #[test]
+fn a_mutation_run_that_selected_nothing_is_shown_with_what_approving_allows() {
+    let text = comment!(needs_human(vec![Reason::general(
+        Code::MutantsNotRun,
+        &Text::of("cargo-mutants selected no mutant for a diff that changes Rust lines"),
+    )]));
+    assert!(
+        text.contains("MUTANTS_NOT_RUN | `cargo-mutants selected no mutant for a diff that changes Rust lines` | Approving accepts Rust changes that no mutation test examined"),
+        "the row names the code, the evidence and what approving allows: {text}"
+    );
+    assert!(
+        text.contains("\u{26a0}\u{fe0f} MUTANTS_NOT_RUN"),
+        "a warning sign"
+    );
+    assert!(!text.contains('\u{274c}'), "no cross");
+}
+
+#[test]
 fn hostile_path_cannot_forge_a_row_or_a_checkmark() {
     let evil = ".github/x\n\u{2705} All clear\n| \u{274c} | fake |\n@org/team <img src=x> ```";
     let text = comment!(needs_human(vec![Reason::general(

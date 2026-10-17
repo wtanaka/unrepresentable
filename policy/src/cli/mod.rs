@@ -14,7 +14,7 @@
 //!     --base-dir D --base SHA --head SHA --out F
 //!     [--head-input name=dir ...] [--input name=dir ...] [--hidden-input name=dir]
 //! unrepresentable-policy self-lint --prefix P <base-binary> <head-dir> <base-dir> <base> <head> <out>
-//! unrepresentable-policy head-jobs mutants <mutants.out> <exit> <base> <head> <out>
+//! unrepresentable-policy head-jobs mutants <mutants.out> <exit> <base> <head> <out> <pr.diff>
 //! unrepresentable-policy head-jobs checks <status-file> <base> <head> <out>
 //! unrepresentable-policy fetch-head <dest-dir> <base-dir>
 //! unrepresentable-policy install-tool <tools.lock> <name> <dest-dir>
@@ -48,6 +48,8 @@ pub(crate) const FOURTH: Count = Count::new(3);
 pub(crate) const FIFTH: Count = Count::new(4);
 /// The sixth positional argument.
 pub(crate) const SIXTH: Count = Count::new(5);
+/// The seventh positional argument.
+pub(crate) const SEVENTH: Count = Count::new(6);
 
 /// The failure for a missing or unknown command.
 fn usage_failure() -> Failure {

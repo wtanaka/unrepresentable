@@ -54,6 +54,10 @@ const FALLBACK_SOURCE: &str = "src/rules.rs";
 /// (about a thousand on the fixtures), so they catch a vacuous run without
 /// failing a run that merely finds less.
 const MINIMUM_FINDINGS: [(&str, usize); 3] = [("fixtures", 100), ("hidden", 1), ("public", 1)];
+/// The most lines of a tool's standard error that are shown in an error.
+const STDERR_LINES: usize = 12;
+/// The most characters of one line of a tool's standard error that are shown.
+const STDERR_LINE_LIMIT: usize = 200;
 /// The lines of the tool's output that are not findings.
 const OTHER_LINE_PREFIXES: [&str; 2] = ["approval: ", "range: "];
 /// The change range the tool is given: `HEAD` names no change, and a range
@@ -196,6 +200,16 @@ struct Shortfall {
     found: Count,
     /// The fewest it had to report.
     least: Count,
+}
+
+/// What one run of a tool printed and how it ended.
+struct ToolOutput {
+    /// How the tool ended.
+    status: Status,
+    /// What the tool printed on standard error.
+    stderr: Text,
+    /// What the tool printed on standard output.
+    stdout: Text,
 }
 
 /// A program, the sandbox words to put in front of it and the input to run on.
@@ -396,9 +410,9 @@ fn tool_env(tool: &ToolRun<'_>) -> Vec<EnvPair> {
 }
 
 /// Runs one tool on one input, with its exit status and what it printed on
-/// standard output (the findings go there; standard error holds only the
+/// standard output (the findings go there) and on standard error (only the
 /// tool's own errors).
-fn run_tool(tool: &ToolRun<'_>) -> Result<(Status, Text), Failure> {
+fn run_tool(tool: &ToolRun<'_>) -> Result<ToolOutput, Failure> {
     let args = Args::empty()
         .with("check")
         .with("--range")
@@ -413,7 +427,37 @@ fn run_tool(tool: &ToolRun<'_>) -> Result<(Status, Text), Failure> {
             uid: tool.uid,
         });
     let captured = process::run(&invocation)?;
-    Ok((captured.status, captured.stdout.lossy_text()))
+    Ok(ToolOutput {
+        status: captured.status,
+        stderr: captured.stderr.lossy_text(),
+        stdout: captured.stdout.lossy_text(),
+    })
+}
+
+/// The first lines of a tool's standard error, made safe to print in a job log.
+/// The text comes from a binary that may be the head binary, or from a binary
+/// run on a pull request's files, so it is never trusted: only printable ASCII
+/// is kept (no escape sequence), a line is cut short, and the lines are
+/// joined with ` | ` so the whole stays one line of the report. The report line
+/// starts with fixed text and holds no newline, so no part of it can start a
+/// workflow command (`::error::`, `##[add-mask]`), which the runner reads only
+/// at the start of a line.
+fn stderr_excerpt(stderr: &Text) -> Text {
+    let lines: Vec<String> = stderr
+        .as_str()
+        .lines()
+        .map(|line| {
+            line.chars()
+                .filter(|found| found.is_ascii_graphic() || *found == ' ')
+                .take(STDERR_LINE_LIMIT)
+                .collect::<String>()
+                .trim()
+                .to_owned()
+        })
+        .filter(|line| !line.is_empty())
+        .take(STDERR_LINES)
+        .collect();
+    Text::from_string(lines.join(" | "))
 }
 
 /// The count key for an input.
@@ -450,14 +494,23 @@ fn describe(status: Status) -> Text {
     }
 }
 
-/// The error for a binary whose run on an input cannot be reported.
-fn failed_run(which: &Name, status: Status, input: &Name) -> Text {
-    Text::from_string(format!(
+/// The error for a binary whose run on an input cannot be reported. Why it
+/// failed (the start of its standard error) is added for every input but the
+/// hidden corpus, whose content must not reach the log, not even in an error
+/// message of the tool.
+fn failed_run(which: &Name, run: &ToolOutput, input: &Input) -> Text {
+    let head = format!(
         "{} binary exit {} on input {}",
         which.as_str(),
-        describe(status).as_str(),
-        input.as_str()
-    ))
+        describe(run.status).as_str(),
+        input.name.as_str()
+    );
+    let why = stderr_excerpt(&run.stderr);
+    match input.origin {
+        Origin::Hidden => Text::from_string(head),
+        Origin::Head | Origin::Public if why.as_str().is_empty() => Text::from_string(head),
+        Origin::Head | Origin::Public => Text::from_string(format!("{head}: {}", why.as_str())),
+    }
 }
 
 /// The error for an input on which the base binary's output cannot be trusted
@@ -497,20 +550,20 @@ fn base_findings(
     input: &Input,
     comparison: &mut Comparison,
 ) -> Result<Option<BTreeSet<FindingKey>>, Failure> {
-    let (status, output) = run_tool(&ToolRun {
+    let ran = run_tool(&ToolRun {
         build: &input.targets.base,
         prefix: &tools.prefix,
         program: &tools.base,
         root: &input.root,
         uid: BASE_UID,
     })?;
-    if is_reportable(status) == Answer::No {
+    if is_reportable(ran.status) == Answer::No {
         comparison
             .errors
-            .push(failed_run(&Name::of("base"), status, &input.name));
+            .push(failed_run(&Name::of("base"), &ran, input));
         return Ok(None);
     }
-    let parsed = parse_output(&output)?;
+    let parsed = parse_output(&ran.stdout)?;
     if parsed.unparsed.get() > 0 {
         comparison.errors.push(Text::from_string(format!(
             "base binary printed {} lines that are not findings on input {}",
@@ -541,22 +594,22 @@ fn compare_input(tools: &Tools, input: &Input, comparison: &mut Comparison) -> R
     let Some(base) = base_findings(tools, input, comparison)? else {
         return Ok(());
     };
-    let (status, output) = run_tool(&ToolRun {
+    let ran = run_tool(&ToolRun {
         build: &input.targets.head,
         prefix: &tools.prefix,
         program: &tools.head,
         root: &input.root,
         uid: HEAD_UID,
     })?;
-    if is_reportable(status) == Answer::No {
+    if is_reportable(ran.status) == Answer::No {
         comparison
             .errors
-            .push(failed_run(&Name::of("head"), status, &input.name));
+            .push(failed_run(&Name::of("head"), &ran, input));
         return Ok(());
     }
     let gone = lost(&Findings {
         base,
-        head: parse_output(&output)?.findings,
+        head: parse_output(&ran.stdout)?.findings,
     });
     if input.origin == Origin::Hidden {
         comparison.hidden_lost = comparison.hidden_lost.plus(Count::new(gone.len()))?;

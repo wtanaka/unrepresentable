@@ -278,6 +278,26 @@ fn non_path_reasons_need_policy_owner() {
 }
 
 #[test]
+fn mutants_not_run_needs_policy_owner() {
+    let reason = Reason::general(Code::MutantsNotRun, &Text::of("no mutant was selected"));
+    assert_eq!(
+        Code::MutantsNotRun.is_path_based(),
+        Answer::No,
+        "the reason names no path"
+    );
+    assert_eq!(
+        Scenario::new(vec![reason.clone()], vec![approval(&login!("maint"))]).is_approved(),
+        Answer::No,
+        "the default owner does not own policy"
+    );
+    assert_eq!(
+        Scenario::new(vec![reason], vec![approval(&login!("polowner"))]).is_approved(),
+        Answer::Yes,
+        "a policy owner can approve it"
+    );
+}
+
+#[test]
 fn unsafe_path_reason_needs_policy_owner() {
     let reason = Reason::general(Code::UnsafePathChars, &Text::of("x"));
     assert_eq!(

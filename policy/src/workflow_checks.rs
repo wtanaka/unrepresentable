@@ -783,6 +783,43 @@ fn check_head_jobs_use_the_offline_wrapper() -> Result<(), Fail> {
 }
 
 #[test]
+fn the_mutants_job_cannot_be_made_to_select_nothing_by_the_head() {
+    assert_eq!(
+        check_the_mutants_job_cannot_be_made_to_select_nothing_by_the_head(),
+        Ok(()),
+        "the_mutants_job_cannot_be_made_to_select_nothing_by_the_head"
+    );
+}
+
+/// A missing `mutants.out` is believed as zero mutants only for a diff that
+/// changes no Rust line (see `headjobs::no_output`), so the diff must be made
+/// from git with `--text` (a head `.gitattributes` with `-diff` would otherwise
+/// turn it into "Binary files differ"), `cargo mutants` must ignore the head's
+/// configuration, and the policy tool must be given the runner's own copy of
+/// the diff.
+fn check_the_mutants_job_cannot_be_made_to_select_nothing_by_the_head() -> Result<(), Fail> {
+    let job = policy_job(&Name::of("mutants"))?.body;
+    let text = job.as_str();
+    ensure!(
+        text.contains(
+            "git -C head diff --text --no-ext-diff --no-textconv \"$BASE_SHA...$HEAD_SHA\" -- src > \"$RUNNER_TEMP/pr.diff\""
+        ),
+        "the diff is made with --text, outside the sandbox"
+    );
+    ensure!(
+        text.contains("cargo-mutants mutants \\\n            --no-config --in-diff"),
+        "cargo mutants ignores a mutants.toml of the head"
+    );
+    ensure!(
+        text.contains(
+            "head-jobs mutants /opt/sandbox/mut/mutants.out \"$(cat \"$RUNNER_TEMP/mutants.exit\")\" \"$BASE_SHA\" \"$HEAD_SHA\" out/result.txt \"$RUNNER_TEMP/pr.diff\""
+        ),
+        "the policy tool reads the runner's diff, not the sandbox's copy"
+    );
+    Ok(())
+}
+
+#[test]
 fn workflows_call_the_rust_binary_not_python() {
     assert_eq!(
         check_workflows_call_the_rust_binary_not_python(),

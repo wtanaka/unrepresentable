@@ -106,6 +106,8 @@ pub(crate) enum Code {
     ManifestChanged,
     /// A mutant survived.
     MutantSurvived,
+    /// `cargo mutants` selected no mutant for a diff that changes Rust lines.
+    MutantsNotRun,
     /// A path outside every known set changed.
     OtherPathChanged,
     /// The merge-policy tooling changed.
@@ -132,7 +134,7 @@ pub(crate) enum Code {
 
 impl Code {
     /// Every code.
-    pub(crate) const ALL: [Self; 25] = [
+    pub(crate) const ALL: [Self; 26] = [
         Self::JudgeModified,
         Self::LintLowered,
         Self::DependencyChanged,
@@ -158,6 +160,7 @@ impl Code {
         Self::LostFinding,
         Self::LostFindingHidden,
         Self::MutantSurvived,
+        Self::MutantsNotRun,
     ];
 
     /// The only job that may report this code.
@@ -187,7 +190,7 @@ impl Code {
             | Self::ToolApproval => Job::SelfLint,
             Self::LostFinding => Job::Differential,
             Self::LostFindingHidden => Job::DifferentialHidden,
-            Self::MutantSurvived => Job::Mutants,
+            Self::MutantSurvived | Self::MutantsNotRun => Job::Mutants,
         }
     }
 
@@ -220,14 +223,18 @@ impl Code {
             | Self::ToolApproval
             | Self::LostFinding
             | Self::LostFindingHidden
-            | Self::MutantSurvived => Answer::No,
+            | Self::MutantSurvived
+            | Self::MutantsNotRun => Answer::No,
         }
     }
 
     /// Codes shown with a warning sign instead of a cross.
     pub(crate) const fn is_warning(self) -> Answer {
         match self {
-            Self::LostFinding | Self::LostFindingHidden | Self::MutantSurvived => Answer::Yes,
+            Self::LostFinding
+            | Self::LostFindingHidden
+            | Self::MutantSurvived
+            | Self::MutantsNotRun => Answer::Yes,
             Self::JudgeModified
             | Self::LintLowered
             | Self::DependencyChanged
@@ -281,6 +288,7 @@ impl Code {
             Self::LostFinding => "LOST_FINDING",
             Self::LostFindingHidden => "LOST_FINDING_HIDDEN",
             Self::MutantSurvived => "MUTANT_SURVIVED",
+            Self::MutantsNotRun => "MUTANTS_NOT_RUN",
         })
     }
 

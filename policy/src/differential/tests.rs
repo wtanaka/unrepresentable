@@ -9,7 +9,7 @@ use crate::io;
 use crate::process::{self, Args};
 use crate::reason::Code;
 use crate::testkit::{Fail, Scratch};
-use crate::types::{Answer, Count, Glyph, Name, RelPath, Text};
+use crate::types::{Answer, Count, Glyph, Message, Name, RelPath, Text};
 use alloc::collections::BTreeSet;
 use core::slice;
 use std::path::{Path, PathBuf};
@@ -516,14 +516,18 @@ fn check_failed_evaluation_is_an_error_not_a_pass() -> Result<(), Fail> {
     let head_failed = run(&clean, &broken)?;
     ensure_eq!(
         head_failed.errors,
-        vec![Text::of("head binary exit 2 on input plain")],
-        "a head that fails is an error even when the base found nothing"
+        vec![Text::of(
+            "head binary exit 2 on input plain: error: no change range"
+        )],
+        "a head that fails is an error even when the base found nothing, and says why"
     );
     let base_failed = run(&broken, &clean)?;
     ensure_eq!(
         base_failed.errors,
-        vec![Text::of("base binary exit 2 on input plain")],
-        "a base that fails is an error"
+        vec![Text::of(
+            "base binary exit 2 on input plain: error: no change range"
+        )],
+        "a base that fails is an error, and says why"
     );
     ensure_eq!(
         run(&clean, &clean)?.errors,
@@ -815,8 +819,12 @@ fn check_crates_are_regenerated() -> Result<(), Fail> {
     }
     let manifest = io::read_text(&made.join("crates/corpus-000/Cargo.toml"))?;
     ensure!(
-        !manifest.as_str().contains("build"),
-        "the manifest of a member is generated and has no build script"
+        manifest.as_str().contains("build = false")
+            && !manifest
+                .as_str()
+                .replace("build = false", "")
+                .contains("build"),
+        "the manifest of a member is generated and has no build script, only `build = false`"
     );
     ensure_eq!(
         io::exists_no_follow(&made.join("crates/corpus-000/src/lib.rs")),
@@ -957,5 +965,177 @@ fn ensure_user_dirs(dirs: &[&PathBuf]) -> Result<(), Fail> {
             );
         }
     }
+    Ok(())
+}
+
+/// The error of `base` failing on `root` as an input of the given origin.
+fn base_error(scratch: &Scratch, body: &Text, origin: Origin) -> Result<Vec<Text>, Fail> {
+    let failing = write_script(scratch, &Name::of("failing"), body)?;
+    let root = scratch.path().join("in");
+    io::create_dirs(&root)?;
+    let input = input_of(&Name::of("plain"), origin, &root)?;
+    Ok(run_pair(&input, (&failing, &failing))?.errors)
+}
+
+#[test]
+fn a_failed_run_says_why_except_on_the_hidden_corpus() {
+    assert_eq!(
+        check_a_failed_run_says_why_except_on_the_hidden_corpus(),
+        Ok(()),
+        "a_failed_run_says_why_except_on_the_hidden_corpus"
+    );
+}
+
+/// The failure of the first pull-request run was only "base binary exit 2 on
+/// input public": the tool's own message was thrown away.
+fn check_a_failed_run_says_why_except_on_the_hidden_corpus() -> Result<(), Fail> {
+    let scratch = Scratch::repository()?;
+    let body = Text::of(
+        "echo 'error: failed to run custom build command' >&2\n\
+         echo 'could not execute process' >&2\nexit 2\n",
+    );
+    for origin in [Origin::Public, Origin::Head] {
+        ensure_eq!(
+            base_error(&scratch, &body, origin)?,
+            vec![Text::of(
+                "base binary exit 2 on input plain: error: failed to run custom build command | could not execute process"
+            )],
+            "{origin:?}: the first lines of standard error are in the error"
+        );
+    }
+    ensure_eq!(
+        base_error(&scratch, &body, Origin::Hidden)?,
+        vec![Text::of("base binary exit 2 on input plain")],
+        "the hidden corpus gets the exit status and nothing the tool said"
+    );
+    ensure_eq!(
+        base_error(&scratch, &Text::of("exit 2\n"), Origin::Public)?,
+        vec![Text::of("base binary exit 2 on input plain")],
+        "a tool that said nothing adds nothing"
+    );
+    Ok(())
+}
+
+#[test]
+fn what_a_failed_run_said_is_safe_to_print() {
+    assert_eq!(
+        check_what_a_failed_run_said_is_safe_to_print(),
+        Ok(()),
+        "what_a_failed_run_said_is_safe_to_print"
+    );
+}
+
+fn check_what_a_failed_run_said_is_safe_to_print() -> Result<(), Fail> {
+    let scratch = Scratch::repository()?;
+    let body = Text::of(
+        "printf '::error::boom\\n\\033[31mred\\033[0m\\r\\n' >&2\n\
+         printf '%0400d\\n' 0 >&2\n\
+         i=0\n\
+         while [ \"$i\" -lt 30 ]; do echo \"line $i\" >&2; i=$((i+1)); done\n\
+         exit 2\n",
+    );
+    let errors = base_error(&scratch, &body, Origin::Public)?;
+    ensure_eq!(errors.len(), 1, "one error");
+    let shown = errors.iter().map(Text::as_str).collect::<String>();
+    ensure!(
+        shown.starts_with("base binary exit 2 on input plain: "),
+        "the error starts with fixed text, so no workflow command can start in it: {shown}"
+    );
+    ensure!(
+        shown
+            .chars()
+            .all(|found| found.is_ascii_graphic() || found == ' '),
+        "only printable characters, no escape, newline or carriage return: {shown:?}"
+    );
+    ensure!(shown.contains("red"), "the text itself is kept: {shown}");
+    let Some(excerpt) = shown.strip_prefix("base binary exit 2 on input plain: ") else {
+        return Err(Fail::new(&Message::of("the excerpt has no fixed start")));
+    };
+    let segments: Vec<&str> = excerpt.split(" | ").collect();
+    ensure_eq!(
+        segments.len(),
+        12,
+        "exactly twelve lines are kept (eleven separators) of the thirty-three the script wrote: {shown}"
+    );
+    ensure_eq!(
+        segments.last().copied(),
+        Some("line 8"),
+        "the lines kept are the first twelve of the non-empty ones"
+    );
+    ensure!(
+        segments
+            .iter()
+            .all(|segment| segment.chars().count() <= 200),
+        "no line is longer than 200 characters: {shown}"
+    );
+    ensure_eq!(
+        segments.iter().map(|segment| segment.chars().count()).max(),
+        Some(200),
+        "the line of 400 characters was cut at exactly 200"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_generated_manifest_never_runs_a_build_script() {
+    assert_eq!(
+        check_a_generated_manifest_never_runs_a_build_script(),
+        Ok(()),
+        "a_generated_manifest_never_runs_a_build_script"
+    );
+}
+
+/// The failure behind the first pull-request run: `proc-macro2` of the public
+/// corpus has a `build.rs`, cargo found it although the generated manifest did
+/// not name it, and `cargo clippy` (run by the tool for the lint tables) built
+/// and ran it, which failed in the sandbox and made the base binary exit 2.
+fn check_a_generated_manifest_never_runs_a_build_script() -> Result<(), Fail> {
+    for origin in [Origin::Public, Origin::Head] {
+        let crates = Scratch::repository()?;
+        crates.write(
+            &RelPath::of("pm/Cargo.toml"),
+            &Text::of("[package]\nname = \"pm\"\nversion = \"1.0.0\"\n"),
+        )?;
+        crates.write(&RelPath::of("pm/src/lib.rs"), &Text::of("pub fn p() {}\n"))?;
+        crates.write(
+            &RelPath::of("pm/build.rs"),
+            &Text::of("fn main() { std::process::exit(1); }\n"),
+        )?;
+        let made = make_workspace(crates.path(), origin)?;
+        let manifest = io::read_text(&made.join("crates/corpus-000/Cargo.toml"))?;
+        ensure!(
+            manifest.as_str().contains("build = false"),
+            "{origin:?}: the manifest turns the build script off: {}",
+            manifest.as_str()
+        );
+        let target = crates.path().join("target");
+        let program = Name::of("cargo");
+        let args = Args::of(&["check", "--offline", "--locked", "--quiet"]);
+        let captured = process::run(
+            &process::Invocation::new(&program, &args)
+                .in_dir(&made)
+                .with_env(&process::EnvPair {
+                    name: Name::of("CARGO_TARGET_DIR"),
+                    value: Text::from_string(target.to_string_lossy().into_owned()),
+                }),
+        )?;
+        ensure_eq!(
+            captured.status,
+            process::Status::Code(Count::new(0)),
+            "{origin:?}: cargo checks the member although build.rs would fail: {}",
+            captured.stderr.lossy_text().as_str()
+        );
+        io::remove_tree(&made)?;
+    }
+    let tree = Scratch::repository()?;
+    tree.write(&RelPath::of("a.rs"), &Text::of("pub fn a() {}\n"))?;
+    let made = make_workspace(tree.path(), Origin::Public)?;
+    ensure!(
+        io::read_text(&made.join("Cargo.toml"))?
+            .as_str()
+            .contains("build = false"),
+        "the member of a bare tree has no build script either"
+    );
+    io::remove_tree(&made)?;
     Ok(())
 }
