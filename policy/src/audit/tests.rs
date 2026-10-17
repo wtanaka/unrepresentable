@@ -55,6 +55,10 @@ const CUSTOM_POLICIES: &str =
 const PINNED_PULL_REQUEST: &str = "{\"allowed_merge_methods\":[\"squash\"],\"dismiss_stale_reviews_on_push\":true,\"require_code_owner_review\":false,\"require_last_push_approval\":false,\"required_approving_review_count\":0,\"required_review_thread_resolution\":false}";
 const PINNED_STATUS_CHECKS: &str = "{\"strict_required_status_checks_policy\":true,\"required_status_checks\":[{\"context\":\"policy\",\"integration_id\":9}]}";
 
+/// The live bypass actors the pinned settings expect on `default-branch`.
+const PINNED_BYPASS: &str =
+    "[{\"actor_type\":\"RepositoryRole\",\"actor_id\":5,\"bypass_mode\":\"pull_request\"}]";
+
 /// The parameters the live pull request and status check rules have.
 struct LiveRules {
     /// The parameters of the pull request rule.
@@ -143,7 +147,7 @@ fn check_ruleset_drift_is_specific() -> Result<(), Fail> {
     for needle in [
         "enforcement is \"disabled\"",
         "rule deletion is missing",
-        "unexpected bypass actor \"Team\"/3",
+        "unexpected bypass actor \"Team\"/3 with bypass mode null",
         "pull_request.require_last_push_approval is not true",
         "required check policy with expected source unrepresentable-policy is missing",
     ] {
@@ -206,11 +210,18 @@ fn check_audit_merge_commit_blocks() -> Result<(), Fail> {
 /// The drift of the `default-branch` ruleset when the live rules have the given
 /// parameters.
 fn parameters_drift(rules: &LiveRules) -> Result<Text, Fail> {
+    ruleset_drift_with(rules, &Text::of(PINNED_BYPASS))
+}
+
+/// The drift of the `default-branch` ruleset when the live rules have the given
+/// parameters and the live ruleset has the given bypass actors (a JSON list).
+fn ruleset_drift_with(rules: &LiveRules, actors: &Text) -> Result<Text, Fail> {
     let expected = json_of(&Text::of(SETTINGS))?;
     let live = json_of(&Text::from_string(format!(
-        "{{\"repo\":{{\"default_branch\":\"main\"}},\"actions\":{{}},\"environments\":{{}},\"app\":{{\"id\":9,\"permissions\":{{}}}},\"rulesets\":{{\"default-branch\":{{\"target\":\"branch\",\"enforcement\":\"active\",\"conditions\":{{\"ref_name\":{{\"include\":[\"~DEFAULT_BRANCH\"],\"exclude\":[]}}}},\"rules\":[{{\"type\":\"pull_request\",\"parameters\":{}}},{{\"type\":\"required_status_checks\",\"parameters\":{}}},{{\"type\":\"non_fast_forward\"}},{{\"type\":\"deletion\"}},{{\"type\":\"required_linear_history\"}}],\"bypass_actors\":[]}}}}}}",
+        "{{\"repo\":{{\"default_branch\":\"main\"}},\"actions\":{{}},\"environments\":{{}},\"app\":{{\"id\":9,\"permissions\":{{}}}},\"rulesets\":{{\"default-branch\":{{\"target\":\"branch\",\"enforcement\":\"active\",\"conditions\":{{\"ref_name\":{{\"include\":[\"~DEFAULT_BRANCH\"],\"exclude\":[]}}}},\"rules\":[{{\"type\":\"pull_request\",\"parameters\":{}}},{{\"type\":\"required_status_checks\",\"parameters\":{}}},{{\"type\":\"non_fast_forward\"}},{{\"type\":\"deletion\"}},{{\"type\":\"required_linear_history\"}}],\"bypass_actors\":{}}}}}}}",
         rules.pull_request.as_str(),
-        rules.status_checks.as_str()
+        rules.status_checks.as_str(),
+        actors.as_str()
     )))?;
     Ok(Text::from_string(
         drift_of!(expected, live)
@@ -518,7 +529,7 @@ fn check_the_pinned_settings_do_not_use_the_native_last_push_rule_and_let_the_ow
         ensure_eq!(
             actors,
             Some(Text::of(
-                "[{\"actor_id\":2,\"actor_type\":\"RepositoryRole\"},{\"actor_id\":5,\"actor_type\":\"RepositoryRole\"}]"
+                "[{\"actor_id\":2,\"actor_type\":\"RepositoryRole\",\"bypass_mode\":\"always\"},{\"actor_id\":5,\"actor_type\":\"RepositoryRole\",\"bypass_mode\":\"always\"}]"
             )),
             "{name} can be bypassed by Maintain and by Admin (the owner of a personal repository is an admin)"
         );
@@ -527,8 +538,119 @@ fn check_the_pinned_settings_do_not_use_the_native_last_push_rule_and_let_the_ow
         expected
             .dig(&keys!["rulesets", "default-branch", "bypass_actors"])
             .map(Json::compact),
-        Some(Text::of("[]")),
-        "nobody bypasses the default branch ruleset"
+        Some(Text::of(
+            "[{\"actor_id\":5,\"actor_type\":\"RepositoryRole\",\"bypass_mode\":\"pull_request\"}]"
+        )),
+        "only the admin role bypasses the default branch ruleset, and only through a pull request"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_pinned_bypass_actors_are_not_drift() {
+    assert_eq!(
+        check_the_pinned_bypass_actors_are_not_drift(),
+        Ok(()),
+        "the_pinned_bypass_actors_are_not_drift"
+    );
+}
+
+fn check_the_pinned_bypass_actors_are_not_drift() -> Result<(), Fail> {
+    let drift = ruleset_drift_with(&pinned_rules(), &Text::of(PINNED_BYPASS))?;
+    ensure_eq!(
+        drift,
+        Text::of(""),
+        "the pinned actor and mode are not drift"
+    );
+    Ok(())
+}
+
+/// The pinned parameters of the pull request rule and the status check rule.
+fn pinned_rules() -> LiveRules {
+    live_rules!(
+        PINNED_PULL_REQUEST.to_owned(),
+        PINNED_STATUS_CHECKS.to_owned()
+    )
+}
+
+#[test]
+fn a_live_always_mode_on_the_default_branch_is_drift() {
+    assert_eq!(
+        check_a_live_always_mode_on_the_default_branch_is_drift(),
+        Ok(()),
+        "a_live_always_mode_on_the_default_branch_is_drift"
+    );
+}
+
+fn check_a_live_always_mode_on_the_default_branch_is_drift() -> Result<(), Fail> {
+    let drift = ruleset_drift_with(
+        &pinned_rules(),
+        &Text::of(
+            "[{\"actor_type\":\"RepositoryRole\",\"actor_id\":5,\"bypass_mode\":\"always\"}]",
+        ),
+    )?;
+    ensure_eq!(
+        drift,
+        Text::of(
+            "ruleset default-branch: bypass actor \"RepositoryRole\"/5 has bypass mode \"always\", expected \"pull_request\""
+        ),
+        "a bypass that also allows a direct push is reported"
+    );
+    let absent = ruleset_drift_with(
+        &pinned_rules(),
+        &Text::of("[{\"actor_type\":\"RepositoryRole\",\"actor_id\":5}]"),
+    )?;
+    ensure!(
+        absent
+            .as_str()
+            .contains("has bypass mode null, expected \"pull_request\""),
+        "a live actor without a mode is reported: {}",
+        absent.as_str()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_missing_bypass_actor_is_drift() {
+    assert_eq!(
+        check_a_missing_bypass_actor_is_drift(),
+        Ok(()),
+        "a_missing_bypass_actor_is_drift"
+    );
+}
+
+fn check_a_missing_bypass_actor_is_drift() -> Result<(), Fail> {
+    let drift = ruleset_drift_with(&pinned_rules(), &Text::of("[]"))?;
+    ensure_eq!(
+        drift,
+        Text::of(
+            "ruleset default-branch: bypass actor \"RepositoryRole\"/5 with bypass mode \"pull_request\" is missing"
+        ),
+        "an expected bypass actor that the live ruleset lacks is reported"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_extra_bypass_actor_is_drift() {
+    assert_eq!(
+        check_an_extra_bypass_actor_is_drift(),
+        Ok(()),
+        "an_extra_bypass_actor_is_drift"
+    );
+}
+
+fn check_an_extra_bypass_actor_is_drift() -> Result<(), Fail> {
+    let drift = ruleset_drift_with(
+        &pinned_rules(),
+        &Text::of("[{\"actor_type\":\"RepositoryRole\",\"actor_id\":5,\"bypass_mode\":\"pull_request\"},{\"actor_type\":\"RepositoryRole\",\"actor_id\":2,\"bypass_mode\":\"pull_request\"}]"),
+    )?;
+    ensure_eq!(
+        drift,
+        Text::of(
+            "ruleset default-branch: unexpected bypass actor \"RepositoryRole\"/2 with bypass mode \"pull_request\""
+        ),
+        "an actor the settings do not list is reported"
     );
     Ok(())
 }

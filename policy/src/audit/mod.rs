@@ -33,6 +33,8 @@ struct Actor {
     id: Option<Json>,
     /// The kind of the actor, when present.
     kind: Option<Json>,
+    /// When the actor may bypass (`always` or `pull_request`), when present.
+    mode: Option<Json>,
 }
 
 /// The parameter object of one rule to compare as a whole: what is expected,
@@ -124,6 +126,7 @@ fn actor(item: &Json) -> Actor {
     Actor {
         id: item.get(&Name::of("actor_id")).cloned(),
         kind: item.get(&Name::of("actor_type")).cloned(),
+        mode: item.get(&Name::of("bypass_mode")).cloned(),
     }
 }
 
@@ -146,6 +149,59 @@ fn rule_types(found: &Json) -> Vec<Text> {
     types
 }
 
+/// The differences in the bypass actors of a ruleset: an actor that is not
+/// expected, an expected actor that is missing, and an actor whose bypass mode
+/// differs (a mode that is absent is a difference too).
+fn bypass_drift(set: &Ruleset<'_>, found: &Json) -> Vec<Text> {
+    let label = set.name.as_str();
+    let allowed: Vec<Actor> = items_of(set.expected.get(&Name::of("bypass_actors")))
+        .iter()
+        .map(actor)
+        .collect();
+    let live: Vec<Actor> = items_of(found.get(&Name::of("bypass_actors")))
+        .iter()
+        .map(actor)
+        .collect();
+    let mut drift = Vec::new();
+    for pair in &live {
+        if allowed.contains(pair) {
+            continue;
+        }
+        match allowed
+            .iter()
+            .find(|want| want.kind == pair.kind && want.id == pair.id)
+        {
+            Some(want) => drift.push(note!(
+                "ruleset {label}: bypass actor {}/{} has bypass mode {}, expected {}",
+                shown(pair.kind.as_ref()).as_str(),
+                shown(pair.id.as_ref()).as_str(),
+                shown(pair.mode.as_ref()).as_str(),
+                shown(want.mode.as_ref()).as_str()
+            )),
+            None => drift.push(note!(
+                "ruleset {label}: unexpected bypass actor {}/{} with bypass mode {}",
+                shown(pair.kind.as_ref()).as_str(),
+                shown(pair.id.as_ref()).as_str(),
+                shown(pair.mode.as_ref()).as_str()
+            )),
+        }
+    }
+    for want in &allowed {
+        if !live
+            .iter()
+            .any(|pair| pair.kind == want.kind && pair.id == want.id)
+        {
+            drift.push(note!(
+                "ruleset {label}: bypass actor {}/{} with bypass mode {} is missing",
+                shown(want.kind.as_ref()).as_str(),
+                shown(want.id.as_ref()).as_str(),
+                shown(want.mode.as_ref()).as_str()
+            ));
+        }
+    }
+    drift
+}
+
 /// The differences in the rule types of a ruleset.
 fn rule_drift(set: &Ruleset<'_>, found: &Json) -> Vec<Text> {
     let label = set.name.as_str();
@@ -159,20 +215,7 @@ fn rule_drift(set: &Ruleset<'_>, found: &Json) -> Vec<Text> {
             ));
         }
     }
-    let allowed: Vec<Actor> = items_of(set.expected.get(&Name::of("bypass_actors")))
-        .iter()
-        .map(actor)
-        .collect();
-    for bypass in items_of(found.get(&Name::of("bypass_actors"))) {
-        let pair = actor(bypass);
-        if !allowed.contains(&pair) {
-            drift.push(note!(
-                "ruleset {label}: unexpected bypass actor {}/{}",
-                shown(pair.kind.as_ref()).as_str(),
-                shown(pair.id.as_ref()).as_str()
-            ));
-        }
-    }
+    drift.extend(bypass_drift(set, found));
     drift
 }
 

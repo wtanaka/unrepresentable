@@ -173,35 +173,46 @@ the App's identity, so nothing a PR can create is read back as trusted.
      pull request that needs no human), require status check `policy` with the
      expected source set to `unrepresentable-policy` (never "any source") and
      "require branches to be up to date" on, require linear history, block force
-     pushes, block deletion, no bypass actors. The audit compares the complete
-     parameter object of the pull request rule and of the status check rule: a
-     parameter GitHub adds or a value someone changes is reported as drift until
-     `settings.json` lists it.
+     pushes, block deletion. The only bypass actor is the Admin role (role id 5)
+     in bypass mode `pull_request`. An admin MAY merge a pull request although
+     rules are unmet (the `policy` check and the approval included), and MUST do
+     it through a pull request: the mode `pull_request` gives no bypass for a
+     direct push to the default branch (never use mode `always` here), and the
+     rule still requires a pull request for every change. The owner is the sole
+     maintainer and code owner and cannot approve their own change, and accepts
+     that single-maintainer changes to protected paths are approved by the owner
+     through this bypass. The approval rules still apply to the policy check
+     itself and to every contributor who is not an admin. The audit compares the
+     complete parameter object of the pull request rule and of the status check
+     rule: a parameter GitHub adds or a value someone changes is reported as
+     drift until `settings.json` lists it.
    - `branch-creation` on all branches: restrict creation; bypass only the
-     Maintain and Admin roles (role ids 2 and 5).
+     Maintain and Admin roles (role ids 2 and 5), in bypass mode `always`.
    - `release-tags` on `refs/tags/v*`: restrict creation, update and deletion;
-     bypass only the Maintain and Admin roles (role ids 2 and 5). The bypass
-     list must contain a role the repository owner actually holds. The owner of
-     a personal-account repository is an admin (role id 5), not a maintainer,
-     and a ruleset that lets only Maintain bypass would lock the owner out of
-     creating the first tag. Verify it in the scratch repository before using
-     the setup for real: (1) as the owner, push a tag `v0.0.0-test` that matches
-     `v*` (it must succeed through the bypass, and be deleted again through it);
-     (2) as a user with write access but neither Maintain nor Admin, the same
-     push must be refused; (3) as the owner, create a branch directly in the
-     repository (it must succeed); (4) run `settings-audit` and confirm it
-     reports no drift for the actor lists. If the owner is locked out, the list
-     in `settings.json` and the ruleset are wrong together: fix both, never only
-     the ruleset. The native "require approval of the most recent push" rule
-     (`require_last_push_approval`) is not used. With zero required approving
-     reviews it can make GitHub refuse the App's merge of an `auto` pull
-     request, so it is false in `settings.json` and the audit pins that. What
-     the policy check does instead, and what it does not: the approval must be
-     of the exact head commit, `dismiss_stale_reviews_on_push` stays on, and a
-     reviewer who is the pull request author, or the author or committer of any
-     commit of the pull request (`GET /pulls/N/commits`), is not counted. The
-     rule is not the same as last-push approval. The rule reads who is named on
-     the commits, and a pusher is not named on a commit. So when the names
+     bypass only the Maintain and Admin roles (role ids 2 and 5), in bypass mode
+     `always`. The bypass list must contain a role the repository owner actually
+     holds. The owner of a personal-account repository is an admin (role id 5),
+     not a maintainer, and a ruleset that lets only Maintain bypass would lock
+     the owner out of creating the first tag. Verify it in the scratch
+     repository before using the setup for real: (1) as the owner, push a tag
+     `v0.0.0-test` that matches `v*` (it must succeed through the bypass, and be
+     deleted again through it); (2) as a user with write access but neither
+     Maintain nor Admin, the same push must be refused; (3) as the owner, create
+     a branch directly in the repository (it must succeed); (4) run
+     `settings-audit` and confirm it reports no drift for the actor lists (the
+     audit compares the bypass mode of every actor too, and reports a missing
+     actor, an extra actor and a different mode). If the owner is locked out,
+     the list in `settings.json` and the ruleset are wrong together: fix both,
+     never only the ruleset. The native "require approval of the most recent
+     push" rule (`require_last_push_approval`) is not used. With zero required
+     approving reviews it can make GitHub refuse the App's merge of an `auto`
+     pull request, so it is false in `settings.json` and the audit pins that.
+     What the policy check does instead, and what it does not: the approval must
+     be of the exact head commit, `dismiss_stale_reviews_on_push` stays on, and
+     a reviewer who is the pull request author, or the author or committer of
+     any commit of the pull request (`GET /pulls/N/commits`), is not counted.
+     The rule is not the same as last-push approval. The rule reads who is named
+     on the commits, and a pusher is not named on a commit. So when the names
      cannot be trusted, nothing is approvable: if any commit has no login for
      its author or for its committer (its email is linked to no GitHub account,
      so the API gives `null`), or if the number of commits listed differs from
@@ -211,14 +222,15 @@ the App's identity, so nothing a PR can create is read back as trusted.
      `web-flow` (a commit made in the GitHub web editor) has a login and counts
      as attributable. What remains: a maintainer who pushes attributable commits
      to someone else's pull request is excluded as an approver, so with a single
-     code owner such a pull request needs a second code owner (the default
-     branch has no bypass actor, on purpose), or the owner re-opens the change
-     as a pull request of their own; and a pull request with unattributable
-     commits can only be merged by hand. Also remaining: git identities are not
-     verified and signed commits are not required, so a pusher who writes
-     someone else's linked email into both fields of a commit is not excluded as
-     an approver. Pull request rule parameters are written as the API names them
-     (`require_code_owner_review`, not "reviews").
+     code owner such a pull request needs a second code owner, or the owner
+     re-opens the change as a pull request of their own, or the owner merges it
+     as an admin through the pull request bypass of the default branch ruleset;
+     and a pull request with unattributable commits can only be merged by hand.
+     Also remaining: git identities are not verified and signed commits are not
+     required, so a pusher who writes someone else's linked email into both
+     fields of a commit is not excluded as an approver. Pull request rule
+     parameters are written as the API names them (`require_code_owner_review`,
+     not "reviews").
 6. crates.io, and the first publish. Trusted publishing can only be added to a
    crate that already exists, and `publish-crate` runs after `assemble` has
    created the GitHub release, so the first release cannot publish itself. First
