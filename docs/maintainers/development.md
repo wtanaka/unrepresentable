@@ -66,9 +66,9 @@ version that was at least two weeks old when it was chosen. `Cargo.lock` is
 committed and every cargo call is `--locked`. `deny.toml` allows only the MIT,
 Apache-2.0 and Unicode-3.0 licenses, one version of each crate, no wildcard
 requirements and crates.io as the only source. Advisories (vulnerabilities,
-yanked and unmaintained crates) are checked on pushes and by the policy sweep.
-The lock lists every third-party package, including optional dependencies that
-Cargo records in the lock without building them.
+yanked and unmaintained crates) are checked on pushes and hourly. The lock lists
+every third-party package, including optional dependencies that Cargo records in
+the lock without building them.
 
 Each crate is used behind a module that already existed (`src/toml`, `src/json`,
 `src/glob`, `policy/src/toml`, `policy/src/json`, `policy/src/bytes`,

@@ -63,7 +63,7 @@ request that contains it, and skips the other jobs only when a head has the same
 tree and the App's `policy` check run for that head completed with success. In
 every other case the checks run: a missing or failed check run, a different
 tree, no pull request, an API error or a failed job. Manual runs never skip. A
-skipped push also skips the advisory check; the sweep covers that case.
+skipped push also skips the advisory check; the hourly sweep covers that case.
 
 The pinned zizmor and cargo-deny are installed from `policy/tools.lock` with
 `unrepresentable-policy install-tool` (see
@@ -99,5 +99,5 @@ another branch that holds the same commit does not count.
 The other workflows are in their own files because their triggers differ:
 `release.yml` (tag push), `policy-review.yml` (`workflow_run` after
 `review-signal.yml`), `review-signal.yml` (`pull_request_review`),
-`policy-sweep.yml` (on demand: the approval sweep and the advisories check) and
-`settings-audit.yml` (on demand).
+`policy-sweep.yml` (schedule: the approval sweep and the advisories check) and
+`settings-audit.yml` (schedule).

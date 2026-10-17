@@ -1,12 +1,14 @@
-# On demand: re-run approval evaluation for every open PR (catches dismissed or
+# Hourly: re-run approval evaluation for every open PR (catches dismissed or
 # changed reviews, and fork PRs for which workflow_run carries no PR number).
-# Also on demand: the cargo-deny advisories check (`advisories` job). It needs the
+# Also hourly: the cargo-deny advisories check (`advisories` job). It needs the
 # RustSec advisory database, so it needs the network and cannot run in the
 # offline head-checks of pull requests. A new advisory can appear against a
-# dependency that did not change, so it is checked by this workflow as well as on
+# dependency that did not change, so it is checked on a schedule as well as on
 # every push (the `deny` job of policy.yml).
 name: policy-sweep
 on:
+  schedule:
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions: {}

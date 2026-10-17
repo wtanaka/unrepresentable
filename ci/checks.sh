@@ -65,8 +65,8 @@
 #   deny-advisories  cargo-deny advisories (vulnerabilities, yanked and
 #                    unmaintained crates). It needs the RustSec advisory
 #                    database, so it needs the network: it runs only where the
-#                    network is allowed (the push jobs and the
-#                    policy-sweep workflow, run on demand, because a new advisory can
+#                    network is allowed (the push jobs and the scheduled
+#                    policy-sweep workflow, hourly, because a new advisory can
 #                    appear against a dependency that did not change), never in
 #                    the offline head-checks, and it takes no --offline. A push
 #                    skipped by `skip-check` also skips it; the sweep covers

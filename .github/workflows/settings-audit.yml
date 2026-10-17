@@ -1,4 +1,4 @@
-# On demand: compare live repository settings and recent merge commits with
+# Daily: compare live repository settings and recent merge commits with
 # policy/settings.json. The read-only administration token lives in the
 # separate `audit` environment, which no PR job uses. The policy tool is built
 # in a job of its own with no environment and no secret and handed over as an
@@ -6,6 +6,8 @@
 # the token is.
 name: settings-audit
 on:
+  schedule:
+    - cron: "41 5 * * *"
   workflow_dispatch:
 
 permissions: {}
