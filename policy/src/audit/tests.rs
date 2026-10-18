@@ -1,5 +1,5 @@
 use super::live::{environment_branches, environment_reviewers};
-use super::{check_merge_commits, compare, Audited, MergeCommit};
+use super::{check_merge_commits, compare, exempt_commit, Audited, MergeCommit};
 use crate::json::{Flag, Json};
 use crate::reason::{Code, Commits};
 use crate::testkit::{json_of, Fail, FakeGithub};
@@ -29,6 +29,16 @@ macro_rules! commit {
     };
 }
 
+macro_rules! commit_at {
+    ($digit:literal, $message:expr_2021, $pulls:literal) => {
+        MergeCommit {
+            sha: sha!($digit),
+            message: Text::of($message),
+            pulls: Count::new($pulls),
+        }
+    };
+}
+
 /// Live rules made of two parameter texts.
 macro_rules! live_rules {
     ($pull_request:expr_2021, $status_checks:expr_2021) => {
@@ -52,7 +62,7 @@ macro_rules! environment {
 const SETTINGS: &str = include_str!("../../../policy/settings.json");
 const CUSTOM_POLICIES: &str =
     "{\"deployment_branch_policy\":{\"protected_branches\":false,\"custom_branch_policies\":true}}";
-const PINNED_PULL_REQUEST: &str = "{\"allowed_merge_methods\":[\"squash\"],\"dismiss_stale_reviews_on_push\":true,\"require_code_owner_review\":false,\"require_last_push_approval\":false,\"required_approving_review_count\":0,\"required_review_thread_resolution\":false}";
+const PINNED_PULL_REQUEST: &str = "{\"allowed_merge_methods\":[\"squash\"],\"dismiss_stale_reviews_on_push\":true,\"require_code_owner_review\":false,\"require_extra_approval_for_unattributed_changes\":true,\"require_last_push_approval\":false,\"required_approving_review_count\":0,\"required_review_thread_resolution\":false,\"required_reviewers\":[]}";
 const PINNED_STATUS_CHECKS: &str = "{\"strict_required_status_checks_policy\":true,\"required_status_checks\":[{\"context\":\"policy\",\"integration_id\":9}]}";
 
 /// The live bypass actors the pinned settings expect on `default-branch`.
@@ -100,6 +110,38 @@ fn check_audit_compare_detects_drift() -> Result<(), Fail> {
     ] {
         ensure!(drift.contains(needle), "{needle} is reported in: {drift}");
     }
+    Ok(())
+}
+
+#[test]
+fn merge_settings_hidden_from_a_read_only_token_are_not_drift() {
+    assert_eq!(
+        check_merge_settings_hidden_from_a_read_only_token_are_not_drift(),
+        Ok(()),
+        "merge_settings_hidden_from_a_read_only_token_are_not_drift"
+    );
+}
+
+fn check_merge_settings_hidden_from_a_read_only_token_are_not_drift() -> Result<(), Fail> {
+    let expected = json_of(&Text::of(
+        "{\"repo\":{\"allow_auto_merge\":false,\"allow_squash_merge\":true,\"other\":true}}",
+    ))?;
+    let hidden = json_of(&Text::of(
+        "{\"repo\":{\"allow_auto_merge\":null,\"other\":true}}",
+    ))?;
+    let drift = drift_of!(expected, hidden);
+    ensure!(
+        !drift.contains("allow_auto_merge") && !drift.contains("allow_squash_merge"),
+        "null or missing merge settings are not drift: {drift}"
+    );
+    let wrong = json_of(&Text::of(
+        "{\"repo\":{\"allow_auto_merge\":true,\"allow_squash_merge\":true,\"other\":false}}",
+    ))?;
+    let wrong_drift = drift_of!(expected, wrong);
+    ensure!(
+        wrong_drift.contains("allow_auto_merge") && wrong_drift.contains("other"),
+        "a returned wrong value and a missing ordinary key are drift: {wrong_drift}"
+    );
     Ok(())
 }
 
@@ -186,23 +228,132 @@ fn check_audit_merge_commit_blocks() -> Result<(), Fail> {
     let good = merge_message(number, &facts)?;
     let message = format!("{}\n\n{}", good.subject.as_str(), good.body.as_str());
     ensure_eq!(
-        check_merge_commits(&[commit!(&message, 1)], &prefix).len(),
+        check_merge_commits(&[commit!(&message, 1)], &prefix, None).len(),
         0,
         "a clean automatic merge is fine"
     );
     ensure_eq!(
         check_merge_commits(
             &[commit!("Squash merge of pull request #3\n\nno block", 1)],
-            &prefix
+            &prefix,
+            None
         )
         .len(),
         1,
         "an automatic merge without a block drifts"
     );
     ensure_eq!(
-        check_merge_commits(&[commit!("Direct push", 0)], &prefix).len(),
+        check_merge_commits(&[commit!("Direct push", 0)], &prefix, None).len(),
         1,
         "a commit without a pull request drifts"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_bootstrap_exemption_skips_only_the_commits_up_to_the_exempt_one() {
+    assert_eq!(
+        check_the_bootstrap_exemption_skips_only_the_commits_up_to_the_exempt_one(),
+        Ok(()),
+        "the_bootstrap_exemption_skips_only_the_commits_up_to_the_exempt_one"
+    );
+}
+
+fn check_the_bootstrap_exemption_skips_only_the_commits_up_to_the_exempt_one() -> Result<(), Fail> {
+    let prefix = Text::of("Squash merge of pull request #");
+    let automatic = "Squash merge of pull request #4\n\nno block";
+    let window = [
+        commit_at!('d', "Direct push after the bootstrap", 0),
+        commit_at!('c', automatic, 1),
+        commit_at!('b', "Bootstrap push, the exempt commit", 0),
+        commit_at!('a', "Older bootstrap push", 0),
+        commit_at!('9', automatic, 0),
+    ];
+    let exempt = sha!('b');
+    let drift = check_merge_commits(&window, &prefix, Some(&exempt));
+    ensure_eq!(
+        drift.len(),
+        2,
+        "only the two newer commits are reported, not the exempt one or older ones: {drift:?}"
+    );
+    ensure!(
+        drift
+            .iter()
+            .any(|line| line.as_str().contains("dddddddddddd")
+                && line.as_str().contains("without a pull request")),
+        "a newer commit with no pull request drifts: {drift:?}"
+    );
+    ensure!(
+        drift
+            .iter()
+            .any(|line| line.as_str().contains("cccccccccccc")
+                && line.as_str().contains("lacks a clean verdict block")),
+        "a newer automatic merge without a clean block drifts: {drift:?}"
+    );
+    ensure!(
+        drift
+            .iter()
+            .all(|line| !line.as_str().contains("bbbbbbbbbbbb")
+                && !line.as_str().contains("aaaaaaaaaaaa")
+                && !line.as_str().contains("999999999999")),
+        "no exempt commit is named: {drift:?}"
+    );
+    ensure_eq!(
+        check_merge_commits(&window, &prefix, None).len(),
+        6,
+        "without exempt_through every commit is checked as before"
+    );
+    ensure_eq!(
+        check_merge_commits(&window, &prefix, Some(&sha!('e'))).len(),
+        6,
+        "an exempt commit outside the window exempts nothing"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_exempt_commit_setting_is_optional_and_must_be_a_full_sha() {
+    assert_eq!(
+        check_the_exempt_commit_setting_is_optional_and_must_be_a_full_sha(),
+        Ok(()),
+        "the_exempt_commit_setting_is_optional_and_must_be_a_full_sha"
+    );
+}
+
+fn check_the_exempt_commit_setting_is_optional_and_must_be_a_full_sha() -> Result<(), Fail> {
+    let with = |value: &str| {
+        json_of(&Text::from_string(format!(
+            "{{\"merge_commits\":{{\"exempt_through\":{value}}}}}"
+        )))
+    };
+    ensure!(
+        exempt_commit(&json_of(&Text::of("{\"merge_commits\":{}}"))?)
+            .is_ok_and(|found| found.is_none()),
+        "a missing key means no exemption"
+    );
+    let good = format!("\"{}\"", "ab".repeat(20));
+    ensure!(
+        exempt_commit(&with(&good)?).is_ok_and(|found| found.is_some()),
+        "a 40-digit sha is accepted"
+    );
+    for bad in [
+        "\"2ea19f27f47c\"".to_owned(),
+        format!("\"{}\"", "AB".repeat(20)),
+        format!("\"{}g\"", "a".repeat(39)),
+        "\"\"".to_owned(),
+        "7".to_owned(),
+        "null".to_owned(),
+    ] {
+        ensure!(
+            exempt_commit(&with(&bad)?).is_err(),
+            "a malformed exempt_through fails the audit: {bad}"
+        );
+    }
+    let pinned = json_of(&Text::of(SETTINGS))?;
+    ensure!(
+        exempt_commit(&pinned).is_ok_and(|found| found
+            .is_some_and(|sha| sha.as_str() == "2ea19f27f47c7584ef86cf86807f54e089454edd")),
+        "settings.json exempts through the last bootstrap commit"
     );
     Ok(())
 }

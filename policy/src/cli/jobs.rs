@@ -1,7 +1,7 @@
 //! The subcommands that prepare inputs and results for the policy decision.
 
 use super::args::Arguments;
-use super::{FIFTH, FIRST, FOURTH, SECOND, SIXTH, THIRD};
+use super::{FIFTH, FIRST, FOURTH, SECOND, SEVENTH, SIXTH, THIRD};
 use crate::artifacts;
 use crate::classify::{self, manifest};
 use crate::differential::{self, corpus, workspace, Input, Origin, TargetDirs};
@@ -95,6 +95,7 @@ pub(crate) fn head_jobs(args: &Arguments) -> Result<Report, Failure> {
                     base: args.word_commit(FOURTH)?,
                     head: args.word_commit(FIFTH)?,
                 },
+                diff: args.word_path(SEVENTH)?,
                 exit,
                 out: args.word_path(SIXTH)?,
                 out_dir: args.word_path(SECOND)?,

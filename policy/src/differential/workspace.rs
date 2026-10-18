@@ -130,10 +130,15 @@ fn lock_for(names: &[Name]) -> Text {
     Text::from_string(format!("{LOCK_HEAD}{}", packages.concat()))
 }
 
-/// The manifest of a member: no dependencies, nothing to fetch.
+/// The manifest of a member: no dependencies, nothing to fetch, and no build
+/// script. Cargo runs a `build.rs` at the crate root even when the manifest
+/// does not name it, and `cargo clippy` (which the tool runs for the lint
+/// tables) builds and runs it first. A crate of the public corpus has one
+/// (`proc-macro2`), and a pull request may add one, so `build = false` turns the
+/// automatic detection off: no generated workspace can run a build script.
 fn manifest_for(name: &Name) -> Text {
     Text::from_string(format!(
-        "[package]\nname = \"{}\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+        "[package]\nname = \"{}\"\nversion = \"0.0.0\"\nedition = \"2021\"\nbuild = false\n",
         name.as_str()
     ))
 }

@@ -238,9 +238,11 @@ pub(crate) fn audit(args: &Arguments, vars: &Vars) -> Result<Report, Failure> {
         .and_then(Json::as_text)
         .cloned()
         .ok_or_else(|| Failure::parse(&Message::of("settings: auto_subject_prefix")))?;
+    let exempt_through = audit::exempt_commit(&expected)?;
     drift.extend(audit::check_merge_commits(
         &recent_commits(&audit_client, &expected)?,
         &prefix,
+        exempt_through.as_ref(),
     ));
     if let Some(file) = args.maybe_word(SECOND) {
         let body: String = drift

@@ -7,8 +7,9 @@ pub(crate) mod live;
 #[cfg(test)]
 mod tests;
 
+use crate::failure::Failure;
 use crate::json::{items_of, members_of, Flag, Json};
-use crate::types::{Count, Name, Sha, Text};
+use crate::types::{Answer, Count, Holds as _, Message, Name, Sha, Text};
 use crate::verdict::parse_block;
 
 /// One line of drift.
@@ -17,6 +18,18 @@ macro_rules! note {
         Text::from_string(format!($($arg)*))
     };
 }
+
+/// The repository settings that the API returns only to a caller with push
+/// access. The audit token is read-only, so for these keys a missing or null
+/// live value means "not visible to this token" and is not drift. The ruleset
+/// parameter `allowed_merge_methods` is still compared, and a value that is
+/// returned is always compared.
+const WRITE_ONLY_REPO_KEYS: [&str; 4] = [
+    "allow_auto_merge",
+    "allow_merge_commit",
+    "allow_rebase_merge",
+    "allow_squash_merge",
+];
 
 /// The expected settings and the live settings they are compared with.
 pub(crate) struct Audited<'doc> {
@@ -365,12 +378,30 @@ fn ruleset_drift(audit: &Audited<'_>) -> Vec<Text> {
     drift
 }
 
+/// Whether `key` is a repository setting that a read-only token cannot read
+/// and `got` is the missing or null value such a token receives.
+fn hidden_from_read_only_tokens(key: &Name, got: Option<&Json>) -> Answer {
+    let missing = match got {
+        None => Answer::Yes,
+        Some(value) => match value {
+            Json::Null => Answer::Yes,
+            Json::Array(_) | Json::Bool(_) | Json::Number(_) | Json::Object(_) | Json::Str(_) => {
+                Answer::No
+            }
+        },
+    };
+    (WRITE_ONLY_REPO_KEYS.contains(&key.as_str()) && missing == Answer::Yes).answer()
+}
+
 /// The differences in the repository settings.
 fn repo_drift(audit: &Audited<'_>) -> Vec<Text> {
     let live_repo = audit.live.get(&Name::of("repo"));
     let mut drift = Vec::new();
     for (key, want) in members_of(audit.expected.get(&Name::of("repo"))) {
         let got = live_repo.and_then(|repo| repo.get(key));
+        if hidden_from_read_only_tokens(key, got) == Answer::Yes {
+            continue;
+        }
         if got != Some(want) {
             drift.push(note!(
                 "repo setting {} is {}, expected {}",
@@ -474,11 +505,43 @@ pub(crate) fn compare(audit: &Audited<'_>) -> Vec<Text> {
     drift
 }
 
+/// The bootstrap commit named by `merge_commits.exempt_through`, if any. A
+/// missing key means no exemption. A key that is present but is not a string of
+/// exactly forty lowercase hexadecimal digits is an error, so that the audit
+/// fails instead of silently checking or silently skipping commits.
+pub(crate) fn exempt_commit(expected: &Json) -> Result<Option<Sha>, Failure> {
+    let Some(value) = expected.dig(&keys!["merge_commits", "exempt_through"]) else {
+        return Ok(None);
+    };
+    value
+        .as_text()
+        .and_then(Sha::parse)
+        .map(Some)
+        .ok_or_else(|| {
+            Failure::parse(&Message::of(
+                "settings: merge_commits.exempt_through is not a 40-digit lowercase hexadecimal sha",
+            ))
+        })
+}
+
 /// Drift among recent commits: no pull request, or an automatic merge without
-/// a clean verdict block.
-pub(crate) fn check_merge_commits(commits: &[MergeCommit], prefix: &Text) -> Vec<Text> {
+/// a clean verdict block. `commits` is newest first. The first commit equal to
+/// `exempt_through` and every older commit after it are skipped by both rules;
+/// when `exempt_through` is not in `commits`, or is `None`, nothing is skipped.
+pub(crate) fn check_merge_commits(
+    commits: &[MergeCommit],
+    prefix: &Text,
+    exempt_through: Option<&Sha>,
+) -> Vec<Text> {
     let mut drift = Vec::new();
+    let mut exempt = false;
     for commit in commits {
+        if exempt_through == Some(&commit.sha) {
+            exempt = true;
+        }
+        if exempt {
+            continue;
+        }
         let subject = match commit.message.as_str().split_once('\n') {
             Some((first, _)) => first,
             None => commit.message.as_str(),
