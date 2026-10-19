@@ -1,0 +1,16 @@
+baseline = "forbidden"
+default-range = "HEAD"
+code = ["src/**"]
+
+[member.fx]
+role = "shell"
+ambient = [{ path = "core::env", files = ["src/**"] }]
+
+[[ban]]
+id = "no-mul"
+paths = ["core::ops::Mul"]
+impl-traits = ["alloc::fmt::Display"]
+
+[[forbidden-reference]]
+files = ["src/**"]
+must-not-name = ["alloc::string::String"]

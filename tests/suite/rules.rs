@@ -928,3 +928,21 @@ fn swallowed_error_resolution() {
         "swallowed-error/resolution"
     );
 }
+
+#[test]
+fn banned_core_config_std_code() {
+    assert_eq!(
+        check_case(&Name::of("banned/core-config-std-code")),
+        Ok(()),
+        "banned/core-config-std-code"
+    );
+}
+
+#[test]
+fn banned_std_config_core_code() {
+    assert_eq!(
+        check_case(&Name::of("banned/std-config-core-code")),
+        Ok(()),
+        "banned/std-config-core-code"
+    );
+}

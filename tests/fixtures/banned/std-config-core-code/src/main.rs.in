@@ -1,0 +1,14 @@
+struct Two;
+impl alloc::fmt::Display for Two {
+    fn fmt(&self, out: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        Ok(())
+    }
+}
+fn mul(a: u8) -> u8 {
+    core::ops::Mul::mul(a, a)
+}
+fn name(s: &alloc::string::String) {}
+fn read() {
+    drop(core::env::var("HOME"));
+}
+fn main() {}
