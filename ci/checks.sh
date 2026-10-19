@@ -188,6 +188,14 @@ check_owntree() {
   # status (cargo itself failing). 3 passes: approval is the merge policy's
   # concern; for a push it was given by merging, for a pull request the
   # policy check asks for it. The approval lines are in the output above.
+  # Say why the check failed, next to the status the policy job reports.
+  if [ "$status" -eq 1 ]; then
+    printf 'ci/checks.sh: owntree: the tool reported findings for range %s (exit 1); they are the lines above, after the "range:" line\n' "$range" >&2
+  elif [ "$status" -eq 2 ]; then
+    printf 'ci/checks.sh: owntree: the tool could not decide for range %s (exit 2); its reason is printed above\n' "$range" >&2
+  elif [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then
+    printf 'ci/checks.sh: owntree: exit %s for range %s is not a tool status; the build or the sandbox failed\n' "$status" "$range" >&2
+  fi
   case "$status" in
     0) ;;
     3) printf 'ci/checks.sh: owntree: the tool needs human approval for this range (exit 3); not a failure of this check\n' >&2 ;;
