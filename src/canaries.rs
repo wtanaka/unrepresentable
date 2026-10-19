@@ -135,7 +135,7 @@ pub(crate) fn parse_marks(source: &Source) -> Result<Vec<Mark>, Failure> {
 /// The message doubles as the item: canary findings are never baselined, and
 /// several of them sit at one place (line 1 of a directory), so the message is
 /// what keeps `normalise` from merging them.
-fn canary_finding(path: &RelPath, line: Line, message: &Message) -> Finding {
+pub(crate) fn canary_finding(path: &RelPath, line: Line, message: &Message) -> Finding {
     Finding {
         col: Col::new(1),
         item: Text::of(message.as_str()),

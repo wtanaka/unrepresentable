@@ -1,6 +1,7 @@
 //! Configuration the compiler reads: manifests, lint config files, cargo
 //! config, and the dependency boundaries.
 use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
+use core::iter;
 
 use crate::config::{Config, ForbiddenDependency, CONFIG_FILE};
 
@@ -25,7 +26,7 @@ struct Dependency {
 }
 
 /// Crate name to the names of the crates it depends on.
-type Graph = BTreeMap<Name, BTreeSet<Name>>;
+pub(crate) type Graph = BTreeMap<Name, BTreeSet<Name>>;
 
 /// The crates reachable from a start crate, each with the crate it was reached through.
 struct Reach {
@@ -33,6 +34,14 @@ struct Reach {
     parent: BTreeMap<Name, Name>,
     /// All crates reached, including the start crate.
     seen: BTreeSet<Name>,
+}
+
+/// What one `[[forbidden-dependency]]` rule found in a graph.
+pub(crate) struct RuleReport {
+    /// Crates that are reached.
+    pub findings: Vec<Finding>,
+    /// `must-never-reach` names that are not in the graph yet.
+    pub notes: Vec<Finding>,
 }
 
 /// The repository's files, and the symbolic links to directories that were not
@@ -316,7 +325,10 @@ fn check_cargo_config(
                     path,
                     section.line,
                     rules::STRAY_LINT_CONFIG,
-                    &Message::from_string(format!("cargo [env] table; record the exact entry `{exact}` as a tracked exception"))));
+                    &Message::from_string(format!(
+                        "cargo [env] table; record the exact entry `{exact}` as a tracked exception"
+                    )),
+                ));
             }
         }
     }
@@ -398,11 +410,27 @@ fn dependencies_of(doc: &Doc) -> Vec<Dependency> {
     out
 }
 
+/// The name crates.io compares by: `-` and `_` are the same character and case
+/// does not matter.
+pub(crate) fn canonical(name: &Name) -> Text {
+    Text::from_string(name.as_str().replace('-', "_").to_ascii_lowercase())
+}
+
+/// Gives every crate one spelling, the first one seen, so that `rust-decimal`
+/// and `rust_decimal` are one node of the graph.
+fn intern(spellings: &mut BTreeMap<Text, Name>, name: &Name) -> Name {
+    spellings
+        .entry(canonical(name))
+        .or_insert_with(|| name.clone())
+        .clone()
+}
+
 /// The `[[package]]` tables of `Cargo.lock`, plus every member's own manifest.
 fn dependency_graph(root: &Root, ws: &Workspace) -> Result<Graph, Failure> {
     let lock_path = RelPath::of("Cargo.lock");
     let lock = toml::parse(&lock_path, &root.read(&lock_path)?)?;
     let mut graph: Graph = BTreeMap::new();
+    let mut spellings: BTreeMap<Text, Name> = BTreeMap::new();
     for section in &lock.sections {
         if section.kind != SectionKind::ArrayOfTables
             || section.header.len() != 1
@@ -419,7 +447,7 @@ fn dependency_graph(root: &Root, ws: &Workspace) -> Result<Graph, Failure> {
         let Some(name) = package else {
             continue;
         };
-        let edges = graph.entry(name).or_default();
+        let edges = graph.entry(intern(&mut spellings, &name)).or_default();
         let deps = section
             .entries
             .iter()
@@ -428,15 +456,17 @@ fn dependency_graph(root: &Root, ws: &Workspace) -> Result<Graph, Failure> {
         for dep in deps_list(deps) {
             if let Some(text) = dep.as_text() {
                 if let Some(first) = text.as_str().split_whitespace().next() {
-                    edges.extend([Name::of(first)]);
+                    edges.extend([intern(&mut spellings, &Name::of(first))]);
                 }
             }
         }
     }
     for member in &ws.members {
-        let edges = graph.entry(member.name.clone()).or_default();
+        let edges = graph
+            .entry(intern(&mut spellings, &member.name))
+            .or_default();
         for dep in dependencies_of(&member.manifest) {
-            edges.extend([dep.name.clone()]);
+            edges.extend([intern(&mut spellings, &dep.name)]);
         }
     }
     Ok(graph)
@@ -473,18 +503,91 @@ fn dead_rule(role: &Text, name: &Name) -> Failure {
     )
 }
 
-/// Fails when `rule` names a crate the graph lacks. An empty `must-not-reach` is
-/// rejected earlier, when the config is read.
-fn check_rule_names(graph: &Graph, rule: &ForbiddenDependency) -> Result<(), Failure> {
-    if !graph.contains_key(&rule.crate_name) {
+/// The crates of `graph` (nodes and dependencies) by their canonical name.
+fn crate_index(graph: &Graph) -> BTreeMap<Text, Name> {
+    graph
+        .iter()
+        .flat_map(|(name, edges)| iter::once(name).chain(edges))
+        .map(|name| (canonical(name), name.clone()))
+        .collect()
+}
+
+/// The note for a `must-never-reach` name that is not in the graph.
+fn absent_note(edge: &Edge<'_>) -> Finding {
+    finding(
+        &RelPath::of(CONFIG_FILE),
+        Line::new(1),
+        rules::FORBIDDEN_DEPENDENCY,
+        &Message::from_string(format!(
+            "`{}` is not in the dependency graph; the rule that keeps it out of `{}` fires if it appears",
+            edge.target.as_str(),
+            edge.start.as_str()
+        )),
+    )
+}
+
+/// Runs one rule over `graph`, whose crates are listed in `index`.
+///
+/// The start crate and every `must-not-reach` name must be in the graph, else
+/// the rule could never fire and the result is an error. A `must-never-reach`
+/// name may be absent: it is reported as a note and the rule fires once it
+/// appears. Names match with `-` and `_` taken as the same, ignoring case, and a
+/// name listed twice counts once.
+fn check_rule(
+    graph: &Graph,
+    index: &BTreeMap<Text, Name>,
+    rule: &ForbiddenDependency,
+) -> Result<RuleReport, Failure> {
+    let Some(start) = index.get(&canonical(&rule.crate_name)) else {
         return Err(dead_rule(&Text::of("crate"), &rule.crate_name));
-    }
+    };
     for target in &rule.must_not_reach {
-        if !graph.contains_key(target) {
+        if !index.contains_key(&canonical(target)) {
             return Err(dead_rule(&Text::of("must-not-reach"), target));
         }
     }
-    Ok(())
+    let reach = reachable(graph, start);
+    let mut report = RuleReport {
+        findings: Vec::new(),
+        notes: Vec::new(),
+    };
+    let mut done: BTreeSet<Text> = BTreeSet::new();
+    for named in rule.must_not_reach.iter().chain(&rule.must_never_reach) {
+        if !done.insert(canonical(named)) {
+            continue;
+        }
+        match index.get(&canonical(named)) {
+            Some(target) if target != start && reach.seen.contains(target) => {
+                report
+                    .findings
+                    .push(reach_finding(&reach, &Edge { start, target }));
+            }
+            Some(_) => {}
+            None => report.notes.push(absent_note(&Edge {
+                start,
+                target: named,
+            })),
+        }
+    }
+    Ok(report)
+}
+
+/// Runs every rule over `graph`; see `check_rule`.
+pub(crate) fn check_rules(
+    graph: &Graph,
+    rules: &[ForbiddenDependency],
+) -> Result<RuleReport, Failure> {
+    let index = crate_index(graph);
+    let mut out = RuleReport {
+        findings: Vec::new(),
+        notes: Vec::new(),
+    };
+    for rule in rules {
+        let mut report = check_rule(graph, &index, rule)?;
+        out.findings.append(&mut report.findings);
+        out.notes.append(&mut report.notes);
+    }
+    Ok(out)
 }
 
 /// The finding for `start` reaching `target`, with the chain that gets there.
@@ -519,35 +622,22 @@ fn reach_finding(reach: &Reach, edge: &Edge<'_>) -> Finding {
 
 /// `forbidden-dependency` over manifests and `Cargo.lock`.
 ///
-/// A rule that names a crate the dependency graph does not contain can never
-/// fire, so it is exit 2 and not a pass: a typo in the name would otherwise
-/// switch the boundary off. A rule that lists no crate to keep out is exit 2 too,
-/// but already when the config is read (see `config::parse`).
+/// A rule that names a start crate or a `must-not-reach` crate the dependency
+/// graph does not contain can never fire, so it is exit 2 and not a pass: a typo
+/// in the name would otherwise switch the boundary off. `must-never-reach` is
+/// for names that may be absent; each absent one is a note on every run. A rule
+/// that lists no crate to keep out is exit 2 too, but already when the config is
+/// read (see `config::parse`).
 pub(crate) fn forbidden_dependencies(
     root: &Root,
     config: &Config,
     ws: &Workspace,
-) -> Result<Vec<Finding>, Failure> {
+) -> Result<RuleReport, Failure> {
     if config.forbidden_dependencies.is_empty() {
-        return Ok(Vec::new());
+        return Ok(RuleReport {
+            findings: Vec::new(),
+            notes: Vec::new(),
+        });
     }
-    let graph = dependency_graph(root, ws)?;
-    let mut out = Vec::new();
-    for rule in &config.forbidden_dependencies {
-        check_rule_names(&graph, rule)?;
-        let start = rule.crate_name.clone();
-        let reach = reachable(&graph, &start);
-        for target in &rule.must_not_reach {
-            if reach.seen.contains(target) && *target != start {
-                out.push(reach_finding(
-                    &reach,
-                    &Edge {
-                        start: &start,
-                        target,
-                    },
-                ));
-            }
-        }
-    }
-    Ok(out)
+    check_rules(&dependency_graph(root, ws)?, &config.forbidden_dependencies)
 }

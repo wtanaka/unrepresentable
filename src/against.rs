@@ -38,6 +38,8 @@ use crate::findings::Finding;
 
 use crate::git::{self, Base, Change, Status};
 
+use crate::guards;
+
 use crate::glob::{Brackets, Glob};
 
 use crate::io::Root;
@@ -658,12 +660,17 @@ fn rule_facts(config: &Config, facts: &mut Facts) {
         )));
     }
     for entry in &config.forbidden_dependencies {
-        for target in &entry.must_not_reach {
-            facts.restrict(Text::from_string(format!(
-                "forbidden-dependency:{}->{}",
-                entry.crate_name.as_str(),
-                target.as_str()
-            )));
+        for (kind, targets) in [
+            ("forbidden-dependency", &entry.must_not_reach),
+            ("forbidden-dependency-never", &entry.must_never_reach),
+        ] {
+            for target in targets {
+                facts.restrict(Text::from_string(format!(
+                    "{kind}:{}->{}",
+                    guards::canonical(&entry.crate_name).as_str(),
+                    guards::canonical(target).as_str()
+                )));
+            }
         }
     }
     for entry in &config.forbidden_references {

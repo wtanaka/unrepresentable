@@ -2,12 +2,14 @@
 //! Each canary marks the lines that must fail with `//~ <rule-id>`.
 
 use crate::canaries;
-use crate::config::{BanSet, Config, ForbiddenReference, MacroComment};
+use crate::config::{BanSet, Config, ForbiddenDependency, ForbiddenReference, MacroComment};
 use crate::failure::Failure;
 use crate::findings::Finding;
 use crate::glob::{Brackets, Glob};
-use crate::types::{Count, Name, RelPath, Source, Text};
-use alloc::collections::BTreeSet;
+use crate::guards::{self, Graph};
+use crate::types::{Count, Line, Message, Name, RelPath, Source, Text};
+use alloc::collections::{BTreeMap, BTreeSet};
+use core::slice;
 
 /// Built-in canaries as (name, source) pairs; each source marks expected findings with `//~`.
 const CANARIES: &[(&str, &str)] = &[
@@ -626,6 +628,78 @@ fn config() -> Result<Config, Failure> {
     Ok(config)
 }
 
+/// A graph of `(crate, dependencies)` pairs.
+fn graph_of(edges: Vec<(Name, Vec<Name>)>) -> Graph {
+    edges
+        .into_iter()
+        .map(|(name, deps)| (name, deps.into_iter().collect()))
+        .collect::<BTreeMap<_, _>>()
+}
+
+/// Proves `forbidden-dependency` on in-memory graphs: a `must-never-reach` name
+/// that is absent is a note, the same name present (spelled the other way, and
+/// through another crate) is a finding, and a `must-not-reach` typo is an error.
+fn dependency_canaries() -> Vec<Finding> {
+    let (guarded, mid, decimal) = (
+        Name::of("guarded"),
+        Name::of("mid"),
+        Name::of("rust_decimal"),
+    );
+    let never = ForbiddenDependency {
+        crate_name: guarded.clone(),
+        must_never_reach: vec![Name::of("rust-decimal")],
+        must_not_reach: Vec::new(),
+    };
+    let typo = ForbiddenDependency {
+        crate_name: guarded.clone(),
+        must_never_reach: Vec::new(),
+        must_not_reach: vec![Name::of("rust_decmial")],
+    };
+    let absent = graph_of(vec![
+        (guarded.clone(), vec![mid.clone()]),
+        (mid.clone(), Vec::new()),
+    ]);
+    let present = graph_of(vec![
+        (guarded, vec![mid.clone()]),
+        (mid, vec![decimal.clone()]),
+        (decimal, Vec::new()),
+    ]);
+    let counts = |graph: &Graph, wanted: &ForbiddenDependency| match guards::check_rules(
+        graph,
+        slice::from_ref(wanted),
+    ) {
+        Ok(report) => Some((report.findings.len(), report.notes.len())),
+        Err(_refused) => None,
+    };
+    let mut out = Vec::new();
+    for (label, got, want) in [
+        (
+            "must-never-reach absent is one note",
+            counts(&absent, &never),
+            Some((0, 1)),
+        ),
+        (
+            "must-never-reach present is one finding",
+            counts(&present, &never),
+            Some((1, 0)),
+        ),
+        (
+            "must-not-reach absent is an error",
+            counts(&absent, &typo),
+            None,
+        ),
+    ] {
+        if got != want {
+            out.push(canaries::canary_finding(
+                &RelPath::of("<self-test>/forbidden_dependency"),
+                Line::new(1),
+                &Message::from_string(format!("forbidden-dependency canary failed: {label}")),
+            ));
+        }
+    }
+    out
+}
+
 /// Runs every built-in canary and checks that every rule is covered.
 pub(crate) fn run() -> Result<Vec<Finding>, Failure> {
     let config = config()?;
@@ -638,6 +712,7 @@ pub(crate) fn run() -> Result<Vec<Finding>, Failure> {
         findings.append(&mut result.findings);
         covered.extend(result.ids);
     }
+    findings.extend(dependency_canaries());
     findings.extend(canaries::coverage_findings(
         &config,
         &covered,

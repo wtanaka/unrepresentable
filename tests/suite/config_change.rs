@@ -810,7 +810,7 @@ fn check_forbidden_dependencies_are_a_restriction() -> Result<(), Fail> {
     );
     ensure!(
         pair.loosened.has_approval(&msg!(
-            "CONFIG_LOOSENED removed forbidden-dependency:fx->num-bigint"
+            "CONFIG_LOOSENED removed forbidden-dependency:fx->num_bigint"
         )) == Answer::Yes,
         "the boundary is reported: {:?}",
         pair.loosened.approvals()
@@ -846,5 +846,111 @@ fn check_forbidden_references_are_a_restriction() -> Result<(), Fail> {
         pair.loosened.approvals()
     );
     ensure_eq!(pair.tightened.exit, Exit::Clean, "adding one is free");
+    Ok(())
+}
+
+#[test]
+fn must_never_reach_is_a_restriction() {
+    assert_eq!(
+        check_must_never_reach_is_a_restriction(),
+        Ok(()),
+        "must_never_reach_is_a_restriction"
+    );
+}
+
+fn check_must_never_reach_is_a_restriction() -> Result<(), Fail> {
+    let rule =
+        table!("[[forbidden-dependency]]\ncrate = \"fx\"\nmust-never-reach = [\"rust_decimal\"]\n");
+    let pair = restriction(&Name::of("forbidden-dependency-never"), &[rule])?;
+    ensure_eq!(
+        pair.loosened.exit,
+        Exit::Approval,
+        "dropping a must-never-reach name is loosening"
+    );
+    ensure!(
+        pair.loosened.has_approval(&msg!(
+            "CONFIG_LOOSENED removed forbidden-dependency-never:fx->rust_decimal"
+        )) == Answer::Yes,
+        "the boundary is reported: {:?}",
+        pair.loosened.approvals()
+    );
+    ensure_eq!(pair.tightened.exit, Exit::Clean, "adding one is free");
+    Ok(())
+}
+
+#[test]
+fn moving_a_name_between_the_reach_lists_is_reported() {
+    assert_eq!(
+        check_moving_a_name_between_the_reach_lists_is_reported(),
+        Ok(()),
+        "moving_a_name_between_the_reach_lists_is_reported"
+    );
+}
+
+fn check_moving_a_name_between_the_reach_lists_is_reported() -> Result<(), Fail> {
+    let step = Step {
+        after: Config::base().with(&table!(
+            "[[forbidden-dependency]]\ncrate = \"fx\"\nmust-never-reach = [\"num-bigint\"]\n"
+        )),
+        before: Config::base().with(&table!(
+            "[[forbidden-dependency]]\ncrate = \"fx\"\nmust-not-reach = [\"num-bigint\"]\n"
+        )),
+    };
+    let outcome = change(&Name::of("forbidden-dependency-move"), &step)?;
+    ensure!(
+        outcome.has_approval(&msg!(
+            "CONFIG_LOOSENED removed forbidden-dependency:fx->num_bigint"
+        )) == Answer::Yes,
+        "dropping the existence check is reported: {:?}",
+        outcome.approvals()
+    );
+    Ok(())
+}
+
+#[test]
+fn the_other_move_and_a_respelling_are_judged_by_the_canonical_name() {
+    assert_eq!(
+        check_the_other_move_and_a_respelling_are_judged_by_the_canonical_name(),
+        Ok(()),
+        "the_other_move_and_a_respelling_are_judged_by_the_canonical_name"
+    );
+}
+
+fn check_the_other_move_and_a_respelling_are_judged_by_the_canonical_name() -> Result<(), Fail> {
+    let never = |name: &str| {
+        Config::base().with(&Extra::Table(Message::from_string(format!(
+            "[[forbidden-dependency]]\ncrate = \"fx\"\nmust-never-reach = [\"{name}\"]\n"
+        ))))
+    };
+    let not = Config::base().with(&table!(
+        "[[forbidden-dependency]]\ncrate = \"fx\"\nmust-not-reach = [\"num-bigint\"]\n"
+    ));
+    let reverse = change(
+        &Name::of("forbidden-dependency-move-back"),
+        &Step {
+            after: not,
+            before: never("num-bigint"),
+        },
+    )?;
+    ensure!(
+        reverse.has_approval(&msg!(
+            "CONFIG_LOOSENED removed forbidden-dependency-never:fx->num_bigint"
+        )) == Answer::Yes,
+        "the move back is reported: {:?}",
+        reverse.approvals()
+    );
+    let respelled = change(
+        &Name::of("forbidden-dependency-respell"),
+        &Step {
+            after: never("Num_Bigint"),
+            before: never("num-bigint"),
+        },
+    )?;
+    ensure_eq!(
+        respelled.exit,
+        Exit::Clean,
+        "the same crate spelled another way is not a change: {:?}",
+        respelled.approvals()
+    );
     Ok(())
 }
