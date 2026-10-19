@@ -171,7 +171,13 @@ pub(crate) struct PathPattern(String);
 impl PathPattern {
     /// Builds a pattern from text such as `std::fs::*`.
     pub(crate) fn of(text: &str) -> Self {
-        Self(text.to_owned())
+        let normalised = match text.split_once("::") {
+            Some((head, tail)) => {
+                format!("{}::{tail}", normalise_crate(&Name::of(head)).as_str())
+            }
+            None => normalise_crate(&Name::of(text)).as_str().to_owned(),
+        };
+        Self(normalised)
     }
 }
 
