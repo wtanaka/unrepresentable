@@ -1,0 +1,14 @@
+struct Two;
+impl std::fmt::Display for Two {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
+fn mul(a: u8) -> u8 {
+    std::ops::Mul::mul(a, a)
+}
+fn name(s: &std::string::String) {}
+fn read() {
+    drop(std::env::var("HOME"));
+}
+fn main() {}

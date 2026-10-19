@@ -1,0 +1,6 @@
+src/main.rs:2:6: banned:no-mul
+src/main.rs:7:4: primitive-signature
+src/main.rs:8:5: banned:no-mul
+src/main.rs:10:4: primitive-signature
+src/main.rs:10:13: forbidden-reference
+src/main.rs:12:5: dropped-call-result
