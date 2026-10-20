@@ -373,14 +373,17 @@ fn collect(root: &Root, config: &Config, ws: &Workspace) -> Result<Raw, Failure>
     all.extend(guards::manifest_lints(ws));
     let found = guards::all_files(root)?;
     all.extend(guards::stray_lint_config(root, config, &found)?);
-    all.extend(guards::forbidden_dependencies(root, config, ws)?);
+    let dependencies = guards::forbidden_dependencies(root, config, ws)?;
+    all.extend(dependencies.findings);
     let universe = lintcov::load_universe(root, ws)?;
     let coverage = lintcov::coverage(root, ws, &universe, &ledger)?;
     all.extend(coverage.findings);
     all.extend(lintcov::toolchain_findings(root)?);
+    let mut notes = coverage.notes;
+    notes.extend(dependencies.notes);
     Ok(Raw {
         findings: findings::normalise(all),
-        notes: coverage.notes,
+        notes,
     })
 }
 

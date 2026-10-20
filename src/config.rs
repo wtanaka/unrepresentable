@@ -6,7 +6,7 @@ use crate::glob::{Brackets, Glob};
 
 use crate::toml::{self, Doc, Entry, Section, SectionKind, Value};
 
-use crate::types::{Count, Line, Message, Name, RelPath, Source, Text};
+use crate::types::{Answer, Count, Line, Message, Name, RelPath, Source, Text};
 
 /// Path of the config file, relative to the repository root. It is fixed: no
 /// flag or key moves it.
@@ -14,6 +14,9 @@ pub(crate) const CONFIG_FILE: &str = ".unrepresentable/config";
 
 /// Path of the ledger file, relative to the repository root.
 pub(crate) const LEDGER_FILE: &str = ".unrepresentable/ledger.md";
+
+/// The longest crate name `must-never-reach` accepts.
+const MAX_CRATE_NAME: usize = 64;
 
 /// Keys accepted at the top level of the config file.
 const TOP_KEYS: &[&str] = &[
@@ -51,7 +54,8 @@ pub(crate) enum BaselineMode {
 }
 
 /// Whether a config must state which paths are code and give every
-/// `[[forbidden-dependency]]` a non-empty `must-not-reach`.
+/// `[[forbidden-dependency]]` a crate to keep out (`must-not-reach` or
+/// `must-never-reach`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Strictness {
     /// A config that is read to compare against: an old one may lack `code` or
@@ -127,7 +131,11 @@ pub(crate) struct MacroComment {
 pub(crate) struct ForbiddenDependency {
     /// Name of the crate the restriction starts from.
     pub crate_name: Name,
-    /// Names of crates that must not be reachable from `crate_name`.
+    /// Like `must_not_reach`, but a name may be absent from the dependency
+    /// graph: the rule fires once the crate appears.
+    pub must_never_reach: Vec<Name>,
+    /// Names of crates that must not be reachable from `crate_name`; each must
+    /// be a crate of the dependency graph.
     pub must_not_reach: Vec<Name>,
 }
 
@@ -367,6 +375,59 @@ fn strings(file: &RelPath, line: Line, value: &Value) -> Result<Vec<Text>, Failu
         .collect()
 }
 
+/// Whether `text` is a crate name: ASCII letters, digits, `-` and `_`, at most
+/// `MAX_CRATE_NAME` characters, and not empty.
+fn is_crate_name(text: &Text) -> Answer {
+    let name = text.as_str();
+    let plain = name
+        .chars()
+        .all(|letter| letter.is_ascii_alphanumeric() || letter == '-' || letter == '_');
+    if !name.is_empty() && name.len() <= MAX_CRATE_NAME && plain {
+        Answer::Yes
+    } else {
+        Answer::No
+    }
+}
+
+/// Reads one `[[forbidden-dependency]]` table.
+fn forbidden_dependency(
+    table: &Table<'_>,
+    strictness: Strictness,
+) -> Result<ForbiddenDependency, Failure> {
+    table.known(&KeySet::of(&[
+        "crate",
+        "must-never-reach",
+        "must-not-reach",
+    ]))?;
+    let crate_name = Name::from_string(table.need_text(&Name::of("crate"))?.as_str().to_owned());
+    let must_not_reach = names(table.list(&Name::of("must-not-reach"))?);
+    let never = table.list(&Name::of("must-never-reach"))?;
+    for text in &never {
+        if is_crate_name(text) == Answer::No {
+            return Err(table.fail(&Message::from_string(format!(
+                "[[forbidden-dependency]] for `{}`: `{}` is not a valid crate name in must-never-reach (ASCII letters, digits, `-` and `_`, at most {MAX_CRATE_NAME} characters)",
+                crate_name.as_str(),
+                text.as_str()
+            ))));
+        }
+    }
+    let must_never_reach = names(never);
+    match strictness {
+        Strictness::Required if must_not_reach.is_empty() && must_never_reach.is_empty() => {
+            return Err(table.fail(&Message::from_string(format!(
+                "[[forbidden-dependency]] for `{}` lists no must-not-reach or must-never-reach crate",
+                crate_name.as_str()
+            ))));
+        }
+        Strictness::Required | Strictness::Lenient => {}
+    }
+    Ok(ForbiddenDependency {
+        crate_name,
+        must_never_reach,
+        must_not_reach,
+    })
+}
+
 /// Converts a value into a list of tables, failing if it is not an array of tables.
 fn inline_tables<'ctx>(
     file: &'ctx RelPath,
@@ -502,23 +563,9 @@ fn array_section(
             });
         }
         ["forbidden-dependency"] => {
-            table.known(&KeySet::of(&["crate", "must-not-reach"]))?;
-            let crate_name =
-                Name::from_string(table.need_text(&Name::of("crate"))?.as_str().to_owned());
-            let must_not_reach = names(table.list(&Name::of("must-not-reach"))?);
-            match strictness {
-                Strictness::Required if must_not_reach.is_empty() => {
-                    return Err(table.fail(&Message::from_string(format!(
-                        "[[forbidden-dependency]] for `{}` lists no must-not-reach crate",
-                        crate_name.as_str()
-                    ))));
-                }
-                Strictness::Required | Strictness::Lenient => {}
-            }
-            config.forbidden_dependencies.push(ForbiddenDependency {
-                crate_name,
-                must_not_reach,
-            });
+            config
+                .forbidden_dependencies
+                .push(forbidden_dependency(table, strictness)?);
         }
         ["forbidden-reference"] => {
             table.known(&KeySet::of(&["files", "must-not-name"]))?;
@@ -559,7 +606,7 @@ fn root_table(
         Some(_) => {
             return Err(table.fail(&Message::of(
                 "`baseline` must be \"shrink-only\" or \"forbidden\"",
-            )))
+            )));
         }
     };
     config.default_range = table.text(&Name::of("default-range"))?;
