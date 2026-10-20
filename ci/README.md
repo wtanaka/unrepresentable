@@ -74,11 +74,11 @@ channel travels as a validated step output passed to later steps with `env:`.
 
 ## Release
 
-A tag is `v` plus the `Cargo.toml` version, for example `v0.0.1-alpha.1`. When
+A tag is `v` plus the `Cargo.toml` version, for example `v0.0.2-alpha.1`. When
 the version has a pre-release suffix, `release.yml` creates the GitHub release
 with `--prerelease` and says in the notes that it is an alpha; the `.crate` file
 and its unpack directory then carry the suffix too
-(`unrepresentable-0.0.1-alpha.1`).
+(`unrepresentable-0.0.2-alpha.1`).
 
 `release.yml` refuses a tag unless the tagged commit passed the push checks.
 Every job checks out `github.sha` (not the tag name) and asserts that `HEAD` is
