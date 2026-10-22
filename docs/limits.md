@@ -66,6 +66,13 @@ writes it.
   for `unreached-file` (a link that points outside the workspace is a finding
   and is not loaded). Discovery of workspace members from `members` patterns
   does not follow directory links.
+- `stray-lint-config` reads only the directories cargo and clippy read config
+  from: the root, each workspace member directory, every ancestor of a member up
+  to the root, and the `.cargo` directory of each of those. A file outside them
+  (for example a `clippy.toml` under `node_modules` or under a `target` that is
+  not a member) is not read, and a symbolic link there is not reported. Member
+  directories are found as the workspace finds them, so a member directory that
+  is ignored by `.gitignore` is still read.
 - Workspace members: as in cargo, a path dependency inside the workspace
   directory that is not in `exclude` is a member and needs a `[member.<name>]`
   role in `.unrepresentable/config` like any other member.

@@ -830,15 +830,18 @@ fn check_a_symlinked_cargo_directory_is_reported() -> Result<(), Fail> {
 }
 
 #[test]
-fn a_clippy_toml_under_a_nested_target_directory_is_found() {
+fn a_clippy_toml_in_a_non_member_target_directory_is_not_reported() {
     assert_eq!(
-        check_a_clippy_toml_under_a_nested_target_directory_is_found(),
+        check_a_clippy_toml_in_a_non_member_target_directory_is_not_reported(),
         Ok(()),
-        "a_clippy_toml_under_a_nested_target_directory_is_found"
+        "a_clippy_toml_in_a_non_member_target_directory_is_not_reported"
     );
 }
 
-fn check_a_clippy_toml_under_a_nested_target_directory_is_found() -> Result<(), Fail> {
+/// `tools/target` is not a member here, so nothing in it is read; a member
+/// `target` directory is checked by the sandbox test
+/// `stray_lint_config_member_target_dir_is_reported` in tests/suite/guards.rs.
+fn check_a_clippy_toml_in_a_non_member_target_directory_is_not_reported() -> Result<(), Fail> {
     let outcome = with_file(
         &Name::of("hard-nested-target"),
         &rel!("tools/target/clippy.toml"),
@@ -848,8 +851,8 @@ fn check_a_clippy_toml_under_a_nested_target_directory_is_found() -> Result<(), 
         outcome.has_rule_in(
             &rel!("tools/target/clippy.toml"),
             &Name::of("stray-lint-config")
-        ) == Answer::Yes,
-        "only the root `target` is build output: {:?} {:?}",
+        ) == Answer::No,
+        "a target directory that is not a member is not read: {:?} {:?}",
         outcome.stderr(),
         outcome.findings()
     );

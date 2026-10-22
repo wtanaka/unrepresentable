@@ -1,0 +1,1 @@
+crates/a/.cargo/config.toml:2:1: stray-lint-config

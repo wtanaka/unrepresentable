@@ -44,14 +44,19 @@ pub(crate) struct RuleReport {
     pub notes: Vec<Finding>,
 }
 
-/// The repository's files, and the symbolic links to directories that were not
-/// followed.
+/// The files `stray-lint-config` reads, and the symbolic links to directories in
+/// its scope. The scope is the workspace's member directories, every ancestor of
+/// one up to the root, and the `.cargo` directory of each of those.
 pub(crate) struct Tree {
-    /// Every file, symbolic links to files included (they are read through).
+    /// Files directly in the `.cargo` directory of a scope directory.
+    pub cargo_files: Vec<RelPath>,
+    /// Files directly in a scope directory, symbolic links to files included
+    /// (they are read through).
     pub files: Vec<RelPath>,
-    /// Symbolic links to directories. A walk that followed them could loop, and
-    /// one that did not would never find a `clippy.toml` or `.cargo/config`
-    /// behind one, so each is reported by `stray-lint-config`.
+    /// Symbolic links to directories that are a member directory, an ancestor of
+    /// one, or the `.cargo` directory of one. Each is reported by
+    /// `stray-lint-config`; what lies behind it is read, as cargo and clippy read
+    /// through it.
     pub linked_dirs: Vec<RelPath>,
 }
 
@@ -69,6 +74,14 @@ struct Setting {
     line: Line,
     /// The full key path, from the table header through any dotted or inline-table keys.
     path: Vec<Name>,
+}
+
+/// What `list_scope` finds directly in one directory.
+struct Listing {
+    /// Files, symbolic links to files included.
+    files: Vec<RelPath>,
+    /// Symbolic links to directories that are in the scope.
+    linked: Vec<RelPath>,
 }
 
 /// Builds a finding at column 1 with no enclosing item.
@@ -167,41 +180,84 @@ fn check_member_lints(path: &RelPath, doc: &Doc, out: &mut Vec<Finding>) {
     }
 }
 
-/// Every file in the repository, skipping the root `target`, `.git` and `.jj`.
-/// A `target` directory anywhere else is walked: it is not the build output of
-/// this workspace, and cargo and clippy read their config from it like any other.
-pub(crate) fn all_files(root: &Root) -> Result<Tree, Failure> {
-    let mut files = Vec::new();
-    let mut linked_dirs = Vec::new();
-    let mut pending = vec![RelPath::of("")];
-    while let Some(dir) = pending.pop() {
-        for entry in root.list(&dir)? {
-            let name = entry.name.as_str();
-            let path = dir.join(name);
-            match entry.kind {
-                EntryKind::Dir => {
-                    let skipped = (dir.as_str().is_empty() && name == "target")
-                        || name == ".git"
-                        || name == ".jj";
-                    if !skipped {
-                        pending.push(path);
-                    }
-                }
-                EntryKind::File => files.push(path),
-                EntryKind::Other => match (root.is_file(&path), root.is_dir(&path)) {
-                    (Answer::Yes, Answer::Yes | Answer::No) => files.push(path),
-                    (Answer::No, Answer::Yes) => linked_dirs.push(path),
-                    (Answer::No, Answer::No) => {}
-                },
-            }
+/// The directories cargo and clippy read config from: the root, each workspace
+/// member directory, and every ancestor of a member up to the root.
+fn scope_dirs(ws: &Workspace) -> BTreeSet<RelPath> {
+    let mut dirs: BTreeSet<RelPath> = iter::once(RelPath::of("")).collect();
+    for member in &ws.members {
+        let mut dir = member.dir.clone();
+        while dirs.insert(dir.clone()) {
+            dir = dir.parent();
         }
     }
-    files.sort();
-    linked_dirs.sort();
-    Ok(Tree { files, linked_dirs })
+    dirs
 }
 
-/// `stray-lint-config`: member clippy files and risky cargo config.
+/// The files and symbolic links of the scope directories: each member directory,
+/// each ancestor of one up to the root, and the `.cargo` directory of each of
+/// those. Nothing else is listed, so a directory outside the scope (`node_modules`,
+/// a `target` that is not a member, a package manager's links) is not read and
+/// its `clippy.toml` is not reported. Each scope directory is listed without
+/// recursion, so no link can loop the walk. A symbolic link to a directory is
+/// read through, as cargo and clippy read through it, and is reported when it
+/// is itself in the scope.
+pub(crate) fn all_files(root: &Root, ws: &Workspace) -> Result<Tree, Failure> {
+    let dirs = scope_dirs(ws);
+    let cargo_dirs: BTreeSet<RelPath> = dirs
+        .iter()
+        .map(|dir| dir.join(".cargo"))
+        .filter(|cargo| root.is_dir(cargo) == Answer::Yes)
+        .collect();
+    let scope: BTreeSet<RelPath> = dirs.union(&cargo_dirs).cloned().collect();
+    let mut tree = Tree {
+        cargo_files: Vec::new(),
+        files: Vec::new(),
+        linked_dirs: Vec::new(),
+    };
+    for dir in &dirs {
+        let listing = list_scope(root, dir, &scope)?;
+        tree.files.extend(listing.files);
+        tree.linked_dirs.extend(listing.linked);
+    }
+    for dir in &cargo_dirs {
+        let listing = list_scope(root, dir, &scope)?;
+        tree.cargo_files.extend(listing.files);
+        tree.linked_dirs.extend(listing.linked);
+    }
+    tree.files.sort();
+    tree.cargo_files.sort();
+    tree.linked_dirs.sort();
+    Ok(tree)
+}
+
+/// Lists the entries of `dir` without recursing: files are listed, and a
+/// symbolic link to a directory is listed as linked when it is in `scope`.
+fn list_scope(root: &Root, dir: &RelPath, scope: &BTreeSet<RelPath>) -> Result<Listing, Failure> {
+    let mut listing = Listing {
+        files: Vec::new(),
+        linked: Vec::new(),
+    };
+    for entry in root.list(dir)? {
+        let path = dir.join(entry.name.as_str());
+        match entry.kind {
+            EntryKind::Dir => {}
+            EntryKind::File => listing.files.push(path),
+            EntryKind::Other => match (root.is_file(&path), root.is_dir(&path)) {
+                (Answer::Yes, Answer::Yes | Answer::No) => listing.files.push(path),
+                (Answer::No, Answer::Yes) => {
+                    if scope.contains(&path) {
+                        listing.linked.push(path);
+                    }
+                }
+                (Answer::No, Answer::No) => {}
+            },
+        }
+    }
+    Ok(listing)
+}
+
+/// `stray-lint-config`: clippy files in member and ancestor directories, and
+/// risky cargo config in the scope.
 pub(crate) fn stray_lint_config(
     root: &Root,
     config: &Config,
@@ -214,7 +270,7 @@ pub(crate) fn stray_lint_config(
             link,
             Line::new(1),
             rules::STRAY_LINT_CONFIG,
-            &Message::of("a symbolic link to a directory is not followed, so a clippy.toml or .cargo/config behind it would go unchecked; replace the link with the real directory"),
+            &Message::of("a symbolic link to a directory that cargo or clippy reads config from; replace the link with the real directory"),
         ));
     }
     for path in &found.files {
@@ -230,8 +286,9 @@ pub(crate) fn stray_lint_config(
                 rules::STRAY_LINT_CONFIG,
                 &Message::of("clippy reads the nearest clippy.toml, so this file replaces the root one; only the root file is allowed")));
         }
-        let in_cargo_dir = path.parent().file_name().as_str() == ".cargo";
-        if in_cargo_dir && matches!(name.as_str(), "config" | "config.toml") {
+    }
+    for path in &found.cargo_files {
+        if matches!(path.file_name().as_str(), "config" | "config.toml") {
             check_cargo_config(root, config, path, &mut out)?;
         }
     }

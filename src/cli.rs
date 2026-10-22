@@ -371,7 +371,7 @@ fn collect(root: &Root, config: &Config, ws: &Workspace) -> Result<Raw, Failure>
     let mut all = analysis.findings;
     all.extend(ledger::check_expects(&ledger, &analysis.expects));
     all.extend(guards::manifest_lints(ws));
-    let found = guards::all_files(root)?;
+    let found = guards::all_files(root, ws)?;
     all.extend(guards::stray_lint_config(root, config, &found)?);
     let dependencies = guards::forbidden_dependencies(root, config, ws)?;
     all.extend(dependencies.findings);
