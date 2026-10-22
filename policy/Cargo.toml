@@ -1,6 +1,6 @@
 [package]
 name = "unrepresentable-policy"
-version = "0.0.2-alpha.1"
+version = "0.0.3-alpha.1"
 edition = "2021"
 rust-version = "1.98"
 description = "Merge-policy automation for the unrepresentable repository: classification, approval, check runs, settings audit."
