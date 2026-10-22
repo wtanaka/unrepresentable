@@ -270,6 +270,29 @@ pub(crate) struct Link {
     pub to: RelPath,
 }
 
+/// Stand-ins for the `$CARGO` and `$RUSTC` executables of one run; `None` keeps
+/// the default.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Programs<'path> {
+    /// The executable to use as `$CARGO`.
+    pub cargo: Option<&'path Path>,
+    /// Whether the run has `CARGO_BUILD_JOBS=1` or inherits the environment.
+    pub jobs: BuildJobs,
+    /// The executable to use as `$RUSTC`.
+    pub rustc: Option<&'path Path>,
+}
+
+impl Programs<'_> {
+    /// Keeps both `$CARGO` and `$RUSTC` at their defaults, with one compile job.
+    pub(crate) const fn none() -> Self {
+        Self {
+            cargo: None,
+            jobs: BuildJobs::One,
+            rustc: None,
+        }
+    }
+}
+
 /// A scratch directory with a workspace (and optionally a git repository) in it.
 #[derive(Clone, Debug)]
 pub(crate) struct Sandbox {
@@ -381,6 +404,27 @@ impl Sandbox {
         Ok(path)
     }
 
+    /// Writes an executable `rustc` stand-in whose `--print sysroot` answers
+    /// `sysroot`, a directory inside the workspace that the caller creates;
+    /// returns the stand-in's path.
+    #[cfg(unix)]
+    pub(crate) fn install_fake_rustc(&self, sysroot: &RelPath) -> Result<RelPath, Fail> {
+        let path = RelPath::of("fake-rustc.sh");
+        self.write(
+            &path,
+            &Message::from_string(format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$(pwd)/{}\"\n",
+                sysroot.as_str()
+            )),
+        )?;
+        let output = Command::new("chmod")
+            .arg("+x")
+            .arg(self.root.join(path.as_str()))
+            .output()?;
+        ensure!(output.status.success(), "chmod +x failed");
+        Ok(path)
+    }
+
     /// Creates the symbolic link.
     #[cfg(unix)]
     pub(crate) fn link(&self, link: &Link) -> Result<(), Fail> {
@@ -416,14 +460,14 @@ impl Sandbox {
 
     /// Runs the binary on the workspace root.
     pub(crate) fn run(&self, flags: &[Flag]) -> Result<Outcome, Fail> {
-        self.run_args(flags, Argument::Root, None)
+        self.run_args(flags, Argument::Root, Programs::none())
     }
 
     fn run_args(
         &self,
         flags: &[Flag],
         mode: Argument,
-        cargo: Option<&Path>,
+        programs: Programs<'_>,
     ) -> Result<Outcome, Fail> {
         let root = self.root.as_os_str().to_owned();
         let mut args: Vec<OsString> = vec![match mode {
@@ -438,7 +482,7 @@ impl Sandbox {
             Argument::Root => args.push(root),
             Argument::RootFirst | Argument::SelfTest => {}
         }
-        let output = spawn(Program::Tool, &args, &self.root, cargo)?;
+        let output = spawn(Program::Tool, &args, &self.root, programs)?;
         Ok(Outcome {
             exit: Exit::of_status(output.status),
             stderr: Message::from_string(String::from_utf8_lossy(&output.stderr).into_owned()),
@@ -450,13 +494,41 @@ impl Sandbox {
     /// a path inside the workspace.
     pub(crate) fn run_with_cargo(&self, flags: &[Flag], cargo: &RelPath) -> Result<Outcome, Fail> {
         let program = self.root.join(cargo.as_str());
-        self.run_args(flags, Argument::Root, Some(&program))
+        let programs = Programs {
+            cargo: Some(&program),
+            jobs: BuildJobs::One,
+            rustc: None,
+        };
+        self.run_args(flags, Argument::Root, programs)
+    }
+
+    /// Like [`Sandbox::run`] but with `CARGO_BUILD_JOBS` left as the environment
+    /// has it, so cargo may compile in parallel.
+    pub(crate) fn run_with_default_jobs(&self, flags: &[Flag]) -> Result<Outcome, Fail> {
+        let programs = Programs {
+            cargo: None,
+            jobs: BuildJobs::Inherited,
+            rustc: None,
+        };
+        self.run_args(flags, Argument::Root, programs)
     }
 
     /// Like [`Sandbox::run`] but with the root before the flags, so that a
     /// trailing flag has no value.
     pub(crate) fn run_with_root_first(&self, flags: &[Flag]) -> Result<Outcome, Fail> {
-        self.run_args(flags, Argument::RootFirst, None)
+        self.run_args(flags, Argument::RootFirst, Programs::none())
+    }
+
+    /// Like [`Sandbox::run`] but with `$RUSTC` set to the executable `rustc`,
+    /// a path inside the workspace.
+    pub(crate) fn run_with_rustc(&self, flags: &[Flag], rustc: &RelPath) -> Result<Outcome, Fail> {
+        let program = self.root.join(rustc.as_str());
+        let programs = Programs {
+            cargo: None,
+            jobs: BuildJobs::One,
+            rustc: Some(&program),
+        };
+        self.run_args(flags, Argument::Root, programs)
     }
 
     /// Writes a minimal single-package workspace that satisfies every guard
@@ -525,7 +597,7 @@ impl Sandbox {
 
     /// Runs the binary with only `self-test`.
     pub(crate) fn self_test(&self) -> Result<Outcome, Fail> {
-        self.run_args(&[], Argument::SelfTest, None)
+        self.run_args(&[], Argument::SelfTest, Programs::none())
     }
 
     /// Clones this repository shallowly (depth 1) into a sibling scratch directory.
@@ -564,6 +636,15 @@ enum Argument {
 enum Program {
     Git,
     Tool,
+}
+
+/// The compile jobs a spawned run may use.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BuildJobs {
+    /// The environment's `CARGO_BUILD_JOBS`, or cargo's default when unset.
+    Inherited,
+    /// `CARGO_BUILD_JOBS=1`.
+    One,
 }
 
 fn repo_file(name: &RelPath) -> Result<Message, Fail> {
@@ -627,7 +708,7 @@ fn git_in(line: &Message, dir: &Path) -> Result<(), Fail> {
         .split_whitespace()
         .map(OsString::from)
         .collect();
-    let output = spawn(Program::Git, &args, dir, None)?;
+    let output = spawn(Program::Git, &args, dir, Programs::none())?;
     if output.status.success() {
         Ok(())
     } else {
@@ -645,7 +726,7 @@ fn spawn(
     program: Program,
     args: &[OsString],
     dir: &Path,
-    cargo: Option<&Path>,
+    programs: Programs<'_>,
 ) -> Result<Output, Fail> {
     let toolchain = repo_file(&RelPath::of("rust-toolchain.toml"))?;
     let channel = toolchain
@@ -665,15 +746,21 @@ fn spawn(
             OsString::from("tester@example.invalid"),
         ),
         ("CARGO_TARGET_DIR", dir.join("target").into_os_string()),
-        // One compile job at a time: with several targets cargo prints the lint
-        // help once per target, and parallel jobs would interleave the copies.
-        ("CARGO_BUILD_JOBS", OsString::from("1")),
     ];
+    if programs.jobs == BuildJobs::One {
+        // One compile job at a time for the nested `cargo clippy` canary runs,
+        // whose JSON diagnostics are read line by line. The lint tables do not
+        // come from cargo, so they do not depend on this.
+        variables.push(("CARGO_BUILD_JOBS", OsString::from("1")));
+    }
     if let Some(pinned) = channel {
         variables.push(("RUSTUP_TOOLCHAIN", pinned));
     }
-    if let Some(program_path) = cargo {
+    if let Some(program_path) = programs.cargo {
         variables.push(("CARGO", program_path.as_os_str().to_owned()));
+    }
+    if let Some(program_path) = programs.rustc {
+        variables.push(("RUSTC", program_path.as_os_str().to_owned()));
     }
     let executable = match program {
         Program::Git => OsString::from("git"),
