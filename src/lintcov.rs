@@ -21,7 +21,7 @@ use crate::toml::{self, Doc, Section, SectionKind, Value};
 
 use crate::types::{Answer, Col, Count, Holds as _, Line, Message, Name, RelPath, Source, Text};
 
-use crate::workspace::{self, Member, TargetKind, Workspace};
+use crate::workspace::Workspace;
 
 /// Names of the clippy lint groups whose members must all be covered.
 const CLIPPY_GROUPS: &[&str] = &[
@@ -222,12 +222,12 @@ fn help_failure(line: Count, text: &Message) -> Failure {
     )
 }
 
-/// Runs cargo in the root and turns a failing exit status into an error.
-fn run_cargo(root: &Root, args: &Args) -> Result<process::Captured, Failure> {
-    let captured = process::cargo(root.path(), args)?;
+/// Runs the pinned `clippy-driver` in the root and turns a failing exit status into an error.
+fn run_driver(root: &Root, args: &Args) -> Result<process::Captured, Failure> {
+    let captured = process::clippy_driver(root.path(), args)?;
     match captured.success {
         Success::No => Err(Failure::io(&Message::from_string(format!(
-            "cargo failed: {}",
+            "clippy-driver failed: {}",
             captured.stderr.as_str().trim()
         )))),
         Success::Yes => Ok(captured),
@@ -246,7 +246,7 @@ fn section_of(trimmed: &Text) -> Option<HelpSection> {
     }
 }
 
-/// Parses `cargo clippy -- -W help` output into the lint universe.
+/// Parses `clippy-driver -W help` output into the lint universe.
 pub(crate) fn parse_help(text: &Source) -> Result<Universe, Failure> {
     let mut universe = Universe::empty();
     let mut section = HelpSection::Outside;
@@ -347,38 +347,10 @@ fn add_row(
     Ok(())
 }
 
-/// `cargo clippy -p <package> --lib` or `--bin <name>`: one target, so the
-/// tables print once and build scripts are not compiled.
-fn target_selector(root: &Root, member: &Member) -> Result<Args, Failure> {
-    let targets = workspace::targets(root, member)?;
-    let base = Args::of(&["clippy", "-p", member.name.as_str()]);
-    if targets.iter().any(|target| target.kind == TargetKind::Lib) {
-        return Ok(base.with("--lib"));
-    }
-    for target in &targets {
-        if target.kind == TargetKind::Bin {
-            let file = target.root.file_name();
-            let name = if file.as_str() == "main.rs" {
-                let parent = target.root.parent();
-                if parent.file_name().as_str() == "src" {
-                    member.name.clone()
-                } else {
-                    parent.file_name()
-                }
-            } else {
-                Name::of(file.as_str().trim_end_matches(".rs"))
-            };
-            return Ok(base.with("--bin").with(name.as_str()));
-        }
-    }
-    Err(Failure::usage(&Message::of(
-        "the first workspace member has no library or binary target to ask clippy about",
-    )))
-}
-
-/// Asks the pinned clippy for its lint tables and parses them.
-pub(crate) fn load_universe(root: &Root, ws: &Workspace) -> Result<Universe, Failure> {
-    let version = run_cargo(root, &Args::of(&["clippy", "--version"]))?;
+/// Asks the pinned `clippy-driver` for its lint tables and parses them. No cargo
+/// runs, so no build script is compiled and no target directory is needed.
+pub(crate) fn load_universe(root: &Root) -> Result<Universe, Failure> {
+    let version = run_driver(root, &Args::of(&["--version"]))?;
     let version_text = version.stdout.to_text();
     let found = version_text.as_str().split_whitespace().nth(1);
     if found != Some(knobs::CLIPPY_VERSION) {
@@ -388,20 +360,9 @@ pub(crate) fn load_universe(root: &Root, ws: &Workspace) -> Result<Universe, Fai
             knobs::CLIPPY_VERSION
         ))));
     }
-    // `cargo clippy -- -W help` runs on the first workspace member (sorted by
-    // directory; the root package if any).
-    let Some(first) = ws.members.first() else {
-        return Err(Failure::usage(&Message::of("workspace has no members")));
-    };
-    let selector = target_selector(root, first)?;
-    let help = run_cargo(root, &selector.with("--").with("-W").with("help"))?;
+    let help = run_driver(root, &Args::of(&["-W", "help"]))?;
     let stdout = help.stdout.to_text();
-    let text = if stdout.as_str().contains("Lint checks provided by rustc") {
-        Source::from_string(stdout.as_str().to_owned())
-    } else {
-        help.stderr
-    };
-    parse_help(&text)
+    parse_help(&Source::from_string(stdout.as_str().to_owned()))
 }
 
 /// Reads the level and priority from a lint table value, or `None` if malformed.

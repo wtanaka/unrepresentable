@@ -165,3 +165,6 @@ writes it.
 - Nested `include!` is not followed (`unscannable-include`).
 - Build scripts that modify the source tree, the contents of dependencies, and
   CI configuration outside the protected paths.
+- Lint tables are read from the toolchain's `clippy-driver` (`-W help`), found
+  under `rustc --print sysroot` in the workspace, not from cargo. A toolchain
+  without the clippy component fails with exit 2.

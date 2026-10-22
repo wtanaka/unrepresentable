@@ -1,10 +1,11 @@
-//! The only module that spawns processes: `git`, `$CARGO` and `$RUSTC`. Every
-//! `cargo` child gets `--release --locked`, so the tool never creates a `debug`
-//! profile directory and never rewrites `Cargo.lock`.
+//! The only module that spawns processes: `git`, `$CARGO`, `$RUSTC` and the
+//! pinned toolchain's `clippy-driver`. Every `cargo` child gets `--release
+//! --locked`, so the tool never creates a `debug` profile directory and never
+//! rewrites `Cargo.lock`.
 
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::failure::Failure;
@@ -85,6 +86,32 @@ pub(crate) fn rustc(dir: &Path, args: &Args) -> Result<Captured, Failure> {
         None => OsString::from("rustc"),
     };
     run(&Program(program), dir, args)
+}
+
+/// Runs the `clippy-driver` of the toolchain that `$RUSTC` (or `rustc`) selects
+/// in `dir`, with `args`, and captures its output. The driver is found under
+/// `rustc --print sysroot` from `dir`, so the toolchain pin applies. No cargo
+/// is involved, so no build script or target directory is touched.
+pub(crate) fn clippy_driver(dir: &Path, args: &Args) -> Result<Captured, Failure> {
+    let sysroot = rustc(dir, &Args::of(&["--print", "sysroot"]))?;
+    if sysroot.success == Success::No {
+        return Err(Failure::io(&Message::from_string(format!(
+            "cannot ask rustc for its sysroot: {}",
+            sysroot.stderr.as_str().trim()
+        ))));
+    }
+    let root = sysroot.stdout.to_text();
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    let driver = PathBuf::from(root.as_str().trim())
+        .join("bin")
+        .join(format!("clippy-driver{suffix}"));
+    if !driver.is_file() {
+        return Err(Failure::io(&Message::from_string(format!(
+            "clippy-driver not found at {}; the pinned toolchain needs its clippy component",
+            driver.display()
+        ))));
+    }
+    run(&Program(driver.into_os_string()), dir, args)
 }
 
 /// `args` with `--release` and `--locked` inserted right after the subcommand,

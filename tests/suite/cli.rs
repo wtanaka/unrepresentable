@@ -195,15 +195,15 @@ fn logged_calls(sandbox: &Sandbox) -> Result<Vec<Message>, Fail> {
 }
 
 #[test]
-fn a_normal_run_calls_cargo_with_release_and_locked() {
+fn a_normal_run_calls_no_cargo_and_creates_no_debug_dir() {
     assert_eq!(
-        check_a_normal_run_calls_cargo_with_release_and_locked(),
+        check_a_normal_run_calls_no_cargo_and_creates_no_debug_dir(),
         Ok(()),
-        "a_normal_run_calls_cargo_with_release_and_locked"
+        "a_normal_run_calls_no_cargo_and_creates_no_debug_dir"
     );
 }
 
-fn check_a_normal_run_calls_cargo_with_release_and_locked() -> Result<(), Fail> {
+fn check_a_normal_run_calls_no_cargo_and_creates_no_debug_dir() -> Result<(), Fail> {
     let sandbox = workspace(&Name::of("cli-cargo-flags-run"))?;
     let logger = sandbox.install_cargo_logger()?;
     let outcome = sandbox.run_with_cargo(&[], &logger)?;
@@ -212,23 +212,130 @@ fn check_a_normal_run_calls_cargo_with_release_and_locked() -> Result<(), Fail> 
         "the run decides: {:?}",
         outcome.stderr()
     );
-    let calls = logged_calls(&sandbox)?;
-    ensure!(
-        calls.iter().any(|call| call
-            .as_str()
-            .starts_with("clippy --release --locked --version")),
-        "`clippy --version` is called: {calls:?}"
-    );
-    ensure!(
-        calls.iter().any(|call| call
-            .as_str()
-            .starts_with("clippy --release --locked -p fx --bin fx -- -W help")),
-        "the lint tables are requested from one target: {calls:?}"
+    ensure_eq!(
+        sandbox.has_path(&RelPath::of("cargo-calls.log")),
+        Answer::No,
+        "the lint tables come from clippy-driver, so no cargo call is logged"
     );
     ensure_eq!(
         sandbox.has_path(&RelPath::of("target/debug")),
         Answer::No,
         "no debug profile directory is created"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_toolchain_without_the_clippy_component_fails_cleanly() {
+    assert_eq!(
+        check_a_toolchain_without_the_clippy_component_fails_cleanly(),
+        Ok(()),
+        "a_toolchain_without_the_clippy_component_fails_cleanly"
+    );
+}
+
+/// `$RUSTC` answers a sysroot with no `bin/clippy-driver`: the run must end with
+/// exit 2 and name the missing driver, not decide anything.
+#[cfg(unix)]
+fn check_a_toolchain_without_the_clippy_component_fails_cleanly() -> Result<(), Fail> {
+    let sandbox = workspace(&Name::of("cli-no-clippy"))?;
+    sandbox.write(&RelPath::of("sysroot/README"), &msg!("no clippy here\n"))?;
+    let rustc = sandbox.install_fake_rustc(&RelPath::of("sysroot"))?;
+    let outcome = sandbox.run_with_rustc(&[], &rustc)?;
+    ensure_eq!(
+        outcome.exit,
+        Exit::Error,
+        "a toolchain without clippy-driver exits 2"
+    );
+    ensure!(
+        outcome
+            .stderr()
+            .as_str()
+            .contains("clippy-driver not found"),
+        "the stderr names the missing driver: {:?}",
+        outcome.stderr()
+    );
+    Ok(())
+}
+
+/// A virtual workspace of `crates/<name>` bin crates; `agreement` sorts first.
+fn members_workspace(name: &Name) -> Result<Sandbox, Fail> {
+    let sandbox = Sandbox::create(name)?;
+    let config = msg!(
+        "baseline = \"forbidden\"\ndefault-range = \"HEAD\"\ncode = [\"crates/**\"]\n\n[member.agreement]\nrole = \"pure\"\n\n[member.other]\nrole = \"pure\"\n"
+    );
+    sandbox.seed_members(&[Name::of("agreement"), Name::of("other")], &config)?;
+    Ok(sandbox)
+}
+
+#[test]
+fn lint_coverage_passes_on_a_cold_target_when_the_first_member_has_a_build_script() {
+    assert_eq!(
+        check_lint_coverage_passes_on_a_cold_target_when_the_first_member_has_a_build_script(),
+        Ok(()),
+        "lint_coverage_passes_on_a_cold_target_when_the_first_member_has_a_build_script"
+    );
+}
+
+fn check_lint_coverage_passes_on_a_cold_target_when_the_first_member_has_a_build_script(
+) -> Result<(), Fail> {
+    let sandbox = members_workspace(&Name::of("cli-build-script-cold"))?;
+    sandbox.write(
+        &RelPath::of("crates/agreement/build.rs"),
+        &msg!("fn main() {}\n"),
+    )?;
+    sandbox.init_repo()?;
+    let outcome = sandbox.run(&[Flag::Range(msg!("HEAD"))])?;
+    ensure!(
+        outcome.exit != Exit::Error,
+        "the run decides: {:?}",
+        outcome.stderr()
+    );
+    ensure_eq!(
+        outcome.has_rule_in(&RelPath::of("Cargo.toml"), &Name::of("lint-coverage")),
+        Answer::No,
+        "the lint tables load without building the first member"
+    );
+    ensure_eq!(
+        sandbox.has_path(&RelPath::of("target")),
+        Answer::No,
+        "nothing is built, so the target directory stays cold"
+    );
+    Ok(())
+}
+
+#[test]
+fn lint_coverage_passes_for_several_multi_target_members_with_default_cargo_jobs() {
+    assert_eq!(
+        check_lint_coverage_passes_for_several_multi_target_members_with_default_cargo_jobs(),
+        Ok(()),
+        "lint_coverage_passes_for_several_multi_target_members_with_default_cargo_jobs"
+    );
+}
+
+fn check_lint_coverage_passes_for_several_multi_target_members_with_default_cargo_jobs(
+) -> Result<(), Fail> {
+    let sandbox = members_workspace(&Name::of("cli-multi-target"))?;
+    sandbox.write(
+        &RelPath::of("crates/agreement/src/lib.rs"),
+        &msg!("pub fn f() {}\n"),
+    )?;
+    sandbox.write(
+        &RelPath::of("crates/other/src/lib.rs"),
+        &msg!("pub fn f() {}\n"),
+    )?;
+    sandbox.init_repo()?;
+    let outcome = sandbox.run_with_default_jobs(&[Flag::Range(msg!("HEAD"))])?;
+    ensure!(
+        outcome.exit != Exit::Error,
+        "the run decides: {:?}",
+        outcome.stderr()
+    );
+    ensure_eq!(
+        outcome.has_rule_in(&RelPath::of("Cargo.toml"), &Name::of("lint-coverage")),
+        Answer::No,
+        "the lint tables are the same whatever targets a member has"
     );
     Ok(())
 }

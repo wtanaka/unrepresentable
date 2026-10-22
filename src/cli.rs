@@ -375,7 +375,7 @@ fn collect(root: &Root, config: &Config, ws: &Workspace) -> Result<Raw, Failure>
     all.extend(guards::stray_lint_config(root, config, &found)?);
     let dependencies = guards::forbidden_dependencies(root, config, ws)?;
     all.extend(dependencies.findings);
-    let universe = lintcov::load_universe(root, ws)?;
+    let universe = lintcov::load_universe(root)?;
     let coverage = lintcov::coverage(root, ws, &universe, &ledger)?;
     all.extend(coverage.findings);
     all.extend(lintcov::toolchain_findings(root)?);
@@ -396,7 +396,7 @@ fn collect(root: &Root, config: &Config, ws: &Workspace) -> Result<Raw, Failure>
 /// `A..B` takes `A` as the base and `A...B` the merge base; a bare revision is
 /// the base. A normal run also needs a full clone (`resolve_base` refuses
 /// shallow repositories) and clippy of exactly the pinned version (lint coverage
-/// runs `cargo clippy -- -W help`), so it is slow and not hermetic.
+/// asks the toolchain's clippy-driver for `-W help`), so it is slow and not hermetic.
 ///
 /// `default-range` is read from the config of the change under review, so the
 /// change could rewrite it. The range it names is therefore only a pointer to a
@@ -548,7 +548,7 @@ fn run_canaries(root: &Root) -> Result<ExitStatus, Failure> {
     let mut found = canaries::run_rule_canaries(root, &config)?;
     if config.clippy_canaries.is_some() {
         let ledger = read_ledger(root)?;
-        let universe = lintcov::load_universe(root, &ws)?;
+        let universe = lintcov::load_universe(root)?;
         let coverage = lintcov::coverage(root, &ws, &universe, &ledger)?;
         found.extend(canaries::run_clippy_canaries(
             root,
