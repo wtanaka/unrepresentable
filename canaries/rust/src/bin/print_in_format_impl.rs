@@ -7,9 +7,9 @@ struct Unit;
 
 #[rustfmt::skip]
 impl fmt::Display for Unit {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         println!("x"); //~ clippy::print_in_format_impl clippy::print_stdout
-        write!(f, "s")
+        write!(formatter, "s")
     }
 }
 

@@ -5,8 +5,8 @@ use core::fmt::{Display, Formatter, Result};
 struct Thing(u8);
 
 impl Display for Thing {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        f.write_str("thing")
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
+        formatter.write_str("thing")
     }
 }
 

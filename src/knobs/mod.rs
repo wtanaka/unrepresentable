@@ -23,19 +23,24 @@
 //! | `future-size-threshold` | 16384 | 1024 | Small futures. |
 //! | `array-size-threshold` | 16384 | 512 | Large arrays go on the heap. |
 //! | `pass-by-value-size-limit` | 256 | 64 | Larger values are passed by reference. |
-//! | `vec-box-size-threshold` | 4096 | 128 | `Vec<Box<T>>` only for large `T`. |
+//! | `vec-box-size-threshold` | 4096 | 16384 | Higher is stricter: `Vec<Box<T>>` is flagged for `T` up to this size. |
 //! | `max-trait-bounds` | 3 | 2 | Few bounds per generic. |
 //! | `max-include-file-size` | 1000000 | 10000 | Small `include_str!` inputs. |
 //! | `stack-size-threshold` | 512000 | 16384 | Small stack frames. |
-//! | `too-large-for-stack` | 200 | 64 | Small stack values. |
-//! | `single-char-binding-names-threshold` | 4 | 1 | No single-character bindings (`min_ident_chars` is denied too). |
-//! | `unnecessary-box-size` | 128 | 64 | Box only larger values. |
+//! | `too-large-for-stack` | 200 | 1024 | Higher is stricter: boxed locals and `vec!` up to this size are flagged. |
+//! | `single-char-binding-names-threshold` | 4 | 0 | No single-character bindings (`min_ident_chars` is denied too). |
+//! | `unnecessary-box-size` | 128 | 512 | Higher is stricter: returning `Box<T>` is flagged for `T` below this size. |
 //! | `check-grouped-late-init` | false | true | Check grouped late initialisation. |
 //! | `allowed-idents-below-min-chars` | `i j x y z w n` | `[]` | No single-letter names. |
 //! | `allowed-prefixes` | `to as into from ..` | `[]` | No exempt name prefixes. |
 //!
 //! `excessive-nesting-threshold` uses `Scale::LowerZeroOff`, because `0` turns
-//! the check off.
+//! the check off. `too-large-for-stack`, `unnecessary-box-size` and
+//! `vec-box-size-threshold` use `Scale::Higher`: they are upper bounds on the
+//! size of what is linted, so a larger number makes the lints fire more.
+//! These three have no natural maximum: their chosen values are caps picked
+//! well above the default, not true limits, and a stricter value later means
+//! editing this table.
 //!
 //! Knobs left at their default, and why: `check-private-items` (true raises
 //! 195 `missing_panics_doc` hits, all on `#[test]` fns, whose job is to assert);
@@ -255,7 +260,7 @@ pub(crate) const KNOBS: &[Knob] = &[
         default: Setting::Int(4),
         name: KnobName("single-char-binding-names-threshold"),
         scale: Scale::Lower,
-        strictest: Setting::Int(1),
+        strictest: Setting::Int(0),
     },
     Knob {
         default: Setting::Int(512_000),
@@ -272,8 +277,8 @@ pub(crate) const KNOBS: &[Knob] = &[
     Knob {
         default: Setting::Int(200),
         name: KnobName("too-large-for-stack"),
-        scale: Scale::Lower,
-        strictest: Setting::Int(64),
+        scale: Scale::Higher,
+        strictest: Setting::Int(1024),
     },
     Knob {
         default: Setting::Int(7),
@@ -296,8 +301,8 @@ pub(crate) const KNOBS: &[Knob] = &[
     Knob {
         default: Setting::Int(128),
         name: KnobName("unnecessary-box-size"),
-        scale: Scale::Lower,
-        strictest: Setting::Int(64),
+        scale: Scale::Higher,
+        strictest: Setting::Int(512),
     },
     Knob {
         default: Setting::Bool(false),
@@ -308,8 +313,8 @@ pub(crate) const KNOBS: &[Knob] = &[
     Knob {
         default: Setting::Int(4096),
         name: KnobName("vec-box-size-threshold"),
-        scale: Scale::Lower,
-        strictest: Setting::Int(128),
+        scale: Scale::Higher,
+        strictest: Setting::Int(0x4000),
     },
     Knob {
         default: Setting::Bool(false),
@@ -345,6 +350,8 @@ pub(crate) enum Setting {
 pub(crate) enum Scale {
     /// Not an integer knob: only the strict setting itself is acceptable.
     Exact,
+    /// A higher number is stricter.
+    Higher,
     /// A lower number is stricter.
     Lower,
     /// A lower number is stricter, and `0` switches the check off.
@@ -391,7 +398,7 @@ impl Whole {
     const fn rank(self, scale: Scale) -> Self {
         match scale {
             Scale::LowerZeroOff if self.0 == 0 => Self(i64::MAX),
-            Scale::Exact | Scale::Lower | Scale::LowerZeroOff => self,
+            Scale::Exact | Scale::Higher | Scale::Lower | Scale::LowerZeroOff => self,
         }
     }
 }
@@ -449,6 +456,10 @@ pub(crate) fn at_least_as_strict(knob: &Knob, change: &Transition<'_>) -> Answer
     }
     match knob.scale {
         Scale::Exact => (after == knob.strictest).answer(),
+        Scale::Higher => match (whole_of(before), whole_of(after)) {
+            (Some(old_value), Some(new_value)) => (new_value >= old_value).answer(),
+            (Some(_) | None, None) | (None, Some(_)) => (after == knob.strictest).answer(),
+        },
         Scale::Lower | Scale::LowerZeroOff => match (whole_of(before), whole_of(after)) {
             (Some(old_value), Some(new_value)) => {
                 (new_value.rank(knob.scale) <= old_value.rank(knob.scale)).answer()
@@ -466,3 +477,6 @@ const fn whole_of(setting: Setting) -> Option<Whole> {
         Setting::Bool(_) | Setting::Str(_) | Setting::Empty | Setting::Listed => None,
     }
 }
+
+#[cfg(test)]
+mod tests;

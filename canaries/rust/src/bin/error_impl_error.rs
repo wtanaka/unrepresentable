@@ -9,8 +9,8 @@ pub struct Error; //~ clippy::error_impl_error clippy::exhaustive_structs
 
 impl Display for Error {
     #[inline]
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        f.write_str("error")
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
+        formatter.write_str("error")
     }
 }
 
