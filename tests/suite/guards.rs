@@ -3,6 +3,9 @@ use crate::support::{
     check_case, Answer, Edit, Exit, Fail, Flag, Message, Name, Outcome, RelPath, Sandbox,
 };
 
+#[cfg(unix)]
+use crate::support::Link;
+
 /// The config of a project whose `canaries/` directory holds rule canaries.
 const CANARY_CONFIG: &str = "baseline = \"forbidden\"
 default-range = \"HEAD\"
@@ -87,6 +90,314 @@ fn stray_lint_config_harmless_cargo_config() {
         Ok(()),
         "stray-lint-config/harmless-cargo-config"
     );
+}
+
+#[test]
+fn stray_lint_config_member_under_node_modules() {
+    assert_eq!(
+        check_case(&Name::of("stray-lint-config/member-under-node-modules")),
+        Ok(()),
+        "stray-lint-config/member-under-node-modules"
+    );
+}
+
+#[test]
+fn stray_lint_config_ancestor_clippy_toml() {
+    assert_eq!(
+        check_case(&Name::of("stray-lint-config/ancestor-clippy-toml")),
+        Ok(()),
+        "stray-lint-config/ancestor-clippy-toml"
+    );
+}
+
+#[test]
+fn stray_lint_config_ancestor_cargo_config() {
+    assert_eq!(
+        check_case(&Name::of("stray-lint-config/ancestor-cargo-config")),
+        Ok(()),
+        "stray-lint-config/ancestor-cargo-config"
+    );
+}
+
+#[test]
+fn stray_lint_config_pnpm_package() {
+    assert_eq!(
+        check_case(&Name::of("stray-lint-config/pnpm-package")),
+        Ok(()),
+        "stray-lint-config/pnpm-package"
+    );
+}
+
+#[test]
+fn stray_lint_config_member_cargo_config() {
+    assert_eq!(
+        check_case(&Name::of("stray-lint-config/member-cargo-config")),
+        Ok(()),
+        "stray-lint-config/member-cargo-config"
+    );
+}
+
+#[test]
+fn stray_lint_config_gitignored_member() {
+    assert_eq!(
+        check_case(&Name::of("stray-lint-config/gitignored-member")),
+        Ok(()),
+        "stray-lint-config/gitignored-member"
+    );
+}
+
+#[test]
+fn stray_lint_config_path_dependency_member() {
+    assert_eq!(
+        check_case(&Name::of("stray-lint-config/path-dependency-member")),
+        Ok(()),
+        "stray-lint-config/path-dependency-member"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn stray_lint_config_pnpm_links_are_not_reported() {
+    assert_eq!(
+        check_pnpm_links_are_not_reported(),
+        Ok(()),
+        "stray_lint_config_pnpm_links_are_not_reported"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn stray_lint_config_linked_member_dir_is_reported() {
+    assert_eq!(
+        check_linked_member_dir_is_reported(),
+        Ok(()),
+        "stray_lint_config_linked_member_dir_is_reported"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn stray_lint_config_linked_ancestor_dir_is_reported() {
+    assert_eq!(
+        check_linked_ancestor_dir_is_reported(),
+        Ok(()),
+        "stray_lint_config_linked_ancestor_dir_is_reported"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn stray_lint_config_linked_member_cargo_dir_is_reported() {
+    assert_eq!(
+        check_linked_member_cargo_dir_is_reported(),
+        Ok(()),
+        "stray_lint_config_linked_member_cargo_dir_is_reported"
+    );
+}
+
+/// A config with a `pure` role for each member in `names`.
+fn members_config(names: &[Name]) -> Message {
+    let blocks: Vec<String> = names
+        .iter()
+        .map(|name| format!("\n[member.{}]\nrole = \"pure\"\n", name.as_str()))
+        .collect();
+    let roles = blocks.concat();
+    Message::from_string(format!(
+        "baseline = \"forbidden\"\ndefault-range = \"HEAD\"\ncode = [\"src/**\"]\n{roles}"
+    ))
+}
+
+/// The manifest of a member package `name`, with `extra` appended.
+#[cfg(unix)]
+fn member_manifest(name: &Name, extra: &Message) -> Message {
+    Message::from_string(format!(
+        "[package]\nname = \"{}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lints]\nworkspace = true\n{}",
+        name.as_str(),
+        extra.as_str()
+    ))
+}
+
+/// A pnpm-style directory link inside `node_modules`, and the same kind of link
+/// elsewhere, are both outside every member and ancestor directory: neither is
+/// reported.
+#[cfg(unix)]
+fn check_pnpm_links_are_not_reported() -> Result<(), Fail> {
+    let package = Name::of("fx");
+    let sandbox = Sandbox::create(&Name::of("case-pnpm-links"))?;
+    sandbox.seed(&package, &Sandbox::default_config(&package))?;
+    sandbox.overlay(&RelPath::of("stray-lint-config/pnpm-package"))?;
+    sandbox.link(&Link {
+        path: RelPath::of("node_modules/alias"),
+        to: RelPath::of("pnpm-pkg"),
+    })?;
+    sandbox.link(&Link {
+        path: RelPath::of("vendor/alias"),
+        to: RelPath::of("../node_modules/pnpm-pkg"),
+    })?;
+    let outcome = run_committed(&sandbox)?;
+    for path in ["node_modules/alias", "vendor/alias"] {
+        ensure!(
+            outcome.has_rule_in(&RelPath::of(path), &Name::of("stray-lint-config")) == Answer::No,
+            "{} is outside every member and ancestor: {:?} {:?}",
+            path,
+            outcome.stderr(),
+            outcome.findings()
+        );
+    }
+    Ok(())
+}
+
+/// A member that is a symbolic link to a directory, reached as a path
+/// dependency, is reported.
+#[cfg(unix)]
+fn check_linked_member_dir_is_reported() -> Result<(), Fail> {
+    let sandbox = Sandbox::create(&Name::of("case-linked-member"))?;
+    sandbox.seed_members(
+        &[Name::of("a")],
+        &members_config(&[Name::of("a"), Name::of("lib")]),
+    )?;
+    // The path dependency must be in the lock file: cargo runs with `--locked`.
+    sandbox.write(
+        &RelPath::of("Cargo.lock"),
+        &Message::of(
+            "# This file is automatically @generated by Cargo.\n# It is not intended for manual editing.\nversion = 4\n\n[[package]]\nname = \"a\"\nversion = \"0.1.0\"\ndependencies = [\n \"lib\",\n]\n\n[[package]]\nname = \"lib\"\nversion = \"0.1.0\"\n",
+        ),
+    )?;
+    sandbox.write(
+        &RelPath::of("vendor/lib/Cargo.toml"),
+        &member_manifest(&Name::of("lib"), &Message::of("")),
+    )?;
+    sandbox.write(
+        &RelPath::of("vendor/lib/src/main.rs"),
+        &Message::of("fn main() {}\n"),
+    )?;
+    sandbox.link(&Link {
+        path: RelPath::of("crates/lib"),
+        to: RelPath::of("../vendor/lib"),
+    })?;
+    sandbox.write(
+        &RelPath::of("crates/a/Cargo.toml"),
+        &member_manifest(
+            &Name::of("a"),
+            &Message::of("\n[dependencies]\nlib = { path = \"../lib\" }\n"),
+        ),
+    )?;
+    let outcome = run_committed(&sandbox)?;
+    ensure!(
+        outcome.has_rule_in(&RelPath::of("crates/lib"), &Name::of("stray-lint-config"))
+            == Answer::Yes,
+        "a linked member directory is reported: {:?} {:?}",
+        outcome.stderr(),
+        outcome.findings()
+    );
+    Ok(())
+}
+
+/// An ancestor of a member that is a symbolic link to a directory is reported.
+#[cfg(unix)]
+fn check_linked_ancestor_dir_is_reported() -> Result<(), Fail> {
+    let sandbox = Sandbox::create(&Name::of("case-linked-ancestor"))?;
+    sandbox.seed_members(&[Name::of("a")], &members_config(&[Name::of("a")]))?;
+    sandbox.link(&Link {
+        path: RelPath::of("cr"),
+        to: RelPath::of("crates"),
+    })?;
+    sandbox.edit(&Edit {
+        file: RelPath::of("Cargo.toml"),
+        from: Message::of("members = [\"crates/*\"]"),
+        to: Message::of("members = [\"cr/a\"]"),
+    })?;
+    let outcome = run_committed(&sandbox)?;
+    ensure!(
+        outcome.has_rule_in(&RelPath::of("cr"), &Name::of("stray-lint-config")) == Answer::Yes,
+        "a linked ancestor directory is reported: {:?} {:?}",
+        outcome.stderr(),
+        outcome.findings()
+    );
+    Ok(())
+}
+
+/// The `.cargo` directory of a member that is a symbolic link is reported.
+#[cfg(unix)]
+fn check_linked_member_cargo_dir_is_reported() -> Result<(), Fail> {
+    let sandbox = Sandbox::create(&Name::of("case-linked-member-cargo"))?;
+    sandbox.seed_members(&[Name::of("a")], &members_config(&[Name::of("a")]))?;
+    sandbox.write(
+        &RelPath::of("realcargo/config.toml"),
+        &Message::of("[build]\nrustflags = [\"-C\", \"debuginfo=0\"]\n"),
+    )?;
+    sandbox.link(&Link {
+        path: RelPath::of("crates/a/.cargo"),
+        to: RelPath::of("../../realcargo"),
+    })?;
+    let outcome = run_committed(&sandbox)?;
+    ensure!(
+        outcome.has_rule_in(
+            &RelPath::of("crates/a/.cargo"),
+            &Name::of("stray-lint-config")
+        ) == Answer::Yes,
+        "a linked `.cargo` directory of a member is reported: {:?} {:?}",
+        outcome.stderr(),
+        outcome.findings()
+    );
+    Ok(())
+}
+
+#[test]
+fn stray_lint_config_member_target_dir_is_reported() {
+    assert_eq!(
+        check_stray_lint_config_member_target_dir_is_reported(),
+        Ok(()),
+        "stray_lint_config_member_target_dir_is_reported"
+    );
+}
+
+/// A member whose directory is named `target` is walked like any other member,
+/// so a `clippy.toml` in it is reported. The seeded `.gitignore` ignores
+/// `target/` and is left as it is: the scope walk reads the working directory,
+/// so the ignored file is still reported.
+fn check_stray_lint_config_member_target_dir_is_reported() -> Result<(), Fail> {
+    let sandbox = Sandbox::create(&Name::of("case-member-target-dir"))?;
+    sandbox.seed_members(
+        &[Name::of("a")],
+        &members_config(&[Name::of("a"), Name::of("tools-target")]),
+    )?;
+    sandbox.edit(&Edit {
+        file: RelPath::of("Cargo.toml"),
+        from: Message::of("members = [\"crates/*\"]"),
+        to: Message::of("members = [\"crates/*\", \"tools/target\"]"),
+    })?;
+    sandbox.write(
+        &RelPath::of("Cargo.lock"),
+        &Message::of(
+            "# This file is automatically @generated by Cargo.\n# It is not intended for manual editing.\nversion = 4\n\n[[package]]\nname = \"a\"\nversion = \"0.1.0\"\n\n[[package]]\nname = \"tools-target\"\nversion = \"0.1.0\"\n",
+        ),
+    )?;
+    sandbox.write(
+        &RelPath::of("tools/target/Cargo.toml"),
+        &Message::of(
+            "[package]\nname = \"tools-target\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lints]\nworkspace = true\n",
+        ),
+    )?;
+    sandbox.write(
+        &RelPath::of("tools/target/src/main.rs"),
+        &Message::of("fn main() {}\n"),
+    )?;
+    sandbox.write(
+        &RelPath::of("tools/target/clippy.toml"),
+        &Message::of("cognitive-complexity-threshold = 100\n"),
+    )?;
+    let outcome = run_committed(&sandbox)?;
+    ensure!(
+        outcome.has_rule_in(
+            &RelPath::of("tools/target/clippy.toml"),
+            &Name::of("stray-lint-config")
+        ) == Answer::Yes,
+        "a clippy.toml in a member directory named `target` is reported: {:?} {:?}",
+        outcome.stderr(),
+        outcome.findings()
+    );
+    Ok(())
 }
 
 #[test]

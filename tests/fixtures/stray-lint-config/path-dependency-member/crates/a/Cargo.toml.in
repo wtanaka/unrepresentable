@@ -1,0 +1,10 @@
+[package]
+name = "a"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+b = { path = "../b" }
