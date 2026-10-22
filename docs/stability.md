@@ -5,8 +5,8 @@
 ## What alpha means
 
 - There is no backwards compatibility promise between any two releases,
-  including two alpha releases of the same version, such as `0.0.2-alpha.1`
-  and `0.0.2-alpha.2`.
+  including two alpha releases of the same version, such as `0.0.3-alpha.1`
+  and `0.0.3-alpha.2`.
 - A release can change or remove anything listed under "What is likely to
   change" without a deprecation period.
 - Alpha releases are marked as pre-releases on GitHub. Cargo does not choose a
