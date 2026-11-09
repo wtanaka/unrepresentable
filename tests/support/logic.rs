@@ -37,11 +37,18 @@ macro_rules! ensure_eq {
     }};
 }
 
+/// The ledger row that stands for "no entries".
+const EMPTY_LEDGER_ROW: &str = "| \u{2014} | \u{2014} | \u{2014} | \u{2014} |";
+
+/// This repository's ledger, whose expect rows name files that a scratch
+/// workspace does not have.
+const LEDGER_FILE: &str = ".unrepresentable/ledger.md";
+
 /// Files copied from this repository into every scratch workspace.
 const LINT_FILES: [&str; 4] = [
     "clippy.toml",
     "rust-toolchain.toml",
-    ".unrepresentable/ledger.md",
+    LEDGER_FILE,
     ".unrepresentable/canary-exemptions.md",
 ];
 
@@ -540,7 +547,7 @@ impl Sandbox {
         self.write(&RelPath::of("Cargo.lock"), &Message::from_string(lock))?;
         for raw in LINT_FILES {
             let file = RelPath::of(raw);
-            self.write(&file, &repo_file(&file)?)?;
+            self.write(&file, &lint_file(&file)?)?;
         }
         self.write(&RelPath::of(".unrepresentable/config"), config)?;
         self.write(&RelPath::of(".gitignore"), &Message::of("target/\n"))?;
@@ -580,7 +587,7 @@ impl Sandbox {
         self.write(&RelPath::of("Cargo.lock"), &Message::from_string(lock))?;
         for raw in LINT_FILES {
             let file = RelPath::of(raw);
-            self.write(&file, &repo_file(&file)?)?;
+            self.write(&file, &lint_file(&file)?)?;
         }
         self.write(&RelPath::of(".unrepresentable/config"), config)?;
         self.write(&RelPath::of(".gitignore"), &Message::of("target/\n"))?;
@@ -654,6 +661,35 @@ pub(crate) fn pinned_channel() -> Result<Message, Fail> {
         .and_then(|rest| rest.strip_suffix('"'))
         .map(Message::of)
         .ok_or_else(|| Fail::new(Message::of("rust-toolchain.toml has no channel line")))
+}
+
+/// This repository's lint file as a scratch workspace gets it: the ledger
+/// keeps its lint omissions and loses its expect rows, every other file is
+/// copied as it is.
+fn lint_file(name: &RelPath) -> Result<Message, Fail> {
+    let text = repo_file(name)?;
+    if name.as_str() != LEDGER_FILE {
+        return Ok(text);
+    }
+    let mut out = String::new();
+    let mut in_expect = false;
+    let mut placeholder_written = false;
+    for line in text.as_str().lines() {
+        if line.starts_with("## ") {
+            in_expect = line == "## Expect ledger";
+        }
+        if in_expect && line.starts_with("| `") {
+            if !placeholder_written {
+                out.push_str(EMPTY_LEDGER_ROW);
+                out.push('\n');
+                placeholder_written = true;
+            }
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    Ok(Message::from_string(out))
 }
 
 /// The `[workspace.lints.*]` tables of this repository's root manifest.
