@@ -13,6 +13,9 @@ print a short usage with `--help`.
   tool on its own tree, the publish check, workflow audit, cargo-deny). CI and
   local runs call the same names. The header comment describes each check, the
   `owntree` exit-code mapping and the offline and network requirements.
+- [`jj-check.sh`](jj-check.sh): runs `check` from a jj workspace, including a
+  secondary one that has no `.git`. It points git at the store behind the
+  workspace and passes `--head` with the parent of the working-copy commit.
 - [`version.sh`](version.sh): prints the `[package]` version of a `Cargo.toml`
   read from standard input and validates it. `checks.sh package` and the tag
   check of `release.yml` use it, and `policy/stage-sandbox.sh` copies it beside
