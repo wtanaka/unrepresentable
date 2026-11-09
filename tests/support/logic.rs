@@ -181,6 +181,8 @@ impl Exit {
 pub(crate) enum Flag {
     Against(Name),
     Canaries,
+    /// `--head NAME`: the revision that stands for `HEAD`.
+    Head(Name),
     Init,
     Range(Message),
     Ratchet,
@@ -716,7 +718,7 @@ fn subcommand_of(flags: &[Flag]) -> OsString {
             Flag::Canaries => return OsString::from("canaries"),
             Flag::Init => return OsString::from("init"),
             Flag::SelfTest => return OsString::from("self-test"),
-            Flag::Against(_) | Flag::Range(_) | Flag::Ratchet | Flag::Raw(_) => {}
+            Flag::Against(_) | Flag::Head(_) | Flag::Range(_) | Flag::Ratchet | Flag::Raw(_) => {}
         }
     }
     OsString::from("check")
@@ -729,6 +731,10 @@ fn flag_args(flags: &[Flag]) -> Vec<OsString> {
             Flag::Against(reference) => {
                 out.push(OsString::from("--against"));
                 out.push(OsString::from(reference.as_str()));
+            }
+            Flag::Head(name) => {
+                out.push(OsString::from("--head"));
+                out.push(OsString::from(name.as_str()));
             }
             Flag::Range(range) => {
                 out.push(OsString::from("--range"));

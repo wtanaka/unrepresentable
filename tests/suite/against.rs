@@ -1682,3 +1682,106 @@ fn check_deleting_a_disallowed_block_from_clippy_toml_needs_approval() -> Result
     );
     Ok(())
 }
+
+#[test]
+fn head_names_the_commit_that_stands_for_head() {
+    assert_eq!(
+        check_head_names_the_commit_that_stands_for_head(),
+        Ok(()),
+        "head_names_the_commit_that_stands_for_head"
+    );
+}
+
+fn check_head_names_the_commit_that_stands_for_head() -> Result<(), Fail> {
+    let sandbox = project(&Name::of("against-head"))?;
+    put!(sandbox, "policy/rules.txt", "rule one, changed\n")?;
+    sandbox.commit_all(&Name::of("change"))?;
+    sandbox.git(&Message::of("checkout -q main"))?;
+    let plain = run(&sandbox)?;
+    ensure_eq!(
+        plain.exit,
+        Exit::Clean,
+        "git HEAD is main, so main...HEAD is empty: {:?}",
+        plain.stdout()
+    );
+    let outcome = sandbox.run(&[
+        Flag::Against(Name::of("main")),
+        Flag::Head(Name::of("work")),
+    ])?;
+    ensure_eq!(
+        outcome.exit,
+        Exit::Approval,
+        "--head work names the committed judge change: {:?}",
+        outcome.stdout()
+    );
+    ensure!(
+        outcome.stdout().as_str().starts_with("range: main...work"),
+        "the range names work: {:?}",
+        outcome.stdout()
+    );
+    ensure!(
+        outcome.has_approval(&msg!("JUDGE_MODIFIED policy/rules.txt")) == Answer::Yes,
+        "the edited file is named: {:?}",
+        outcome.approvals()
+    );
+    Ok(())
+}
+
+#[test]
+fn head_replaces_the_head_of_the_configured_range() {
+    assert_eq!(
+        check_head_replaces_the_head_of_the_configured_range(),
+        Ok(()),
+        "head_replaces_the_head_of_the_configured_range"
+    );
+}
+
+fn check_head_replaces_the_head_of_the_configured_range() -> Result<(), Fail> {
+    let sandbox = project(&Name::of("against-head-config"))?;
+    put!(sandbox, "policy/rules.txt", "rule one, changed\n")?;
+    sandbox.commit_all(&Name::of("change"))?;
+    sandbox.git(&Message::of("checkout -q main"))?;
+    let outcome = sandbox.run(&[Flag::Head(Name::of("work"))])?;
+    ensure_eq!(
+        outcome.exit,
+        Exit::Approval,
+        "the configured main...HEAD becomes main...work: {:?} {:?}",
+        outcome.stdout(),
+        outcome.stderr()
+    );
+    ensure!(
+        outcome.stdout().as_str().starts_with("range: main...work"),
+        "the range names work: {:?}",
+        outcome.stdout()
+    );
+    ensure!(
+        outcome.has_approval(&msg!("JUDGE_MODIFIED policy/rules.txt")) == Answer::Yes,
+        "the edited file is named: {:?}",
+        outcome.approvals()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_head_that_is_not_a_revision_is_an_error() {
+    assert_eq!(
+        check_a_head_that_is_not_a_revision_is_an_error(),
+        Ok(()),
+        "a_head_that_is_not_a_revision_is_an_error"
+    );
+}
+
+fn check_a_head_that_is_not_a_revision_is_an_error() -> Result<(), Fail> {
+    let sandbox = project(&Name::of("against-head-missing"))?;
+    let outcome = sandbox.run(&[
+        Flag::Against(Name::of("main")),
+        Flag::Head(Name::of("no-such-rev")),
+    ])?;
+    ensure_eq!(outcome.exit, Exit::Error, "an unknown --head exits 2");
+    ensure!(
+        outcome.stderr().as_str().contains("git"),
+        "the error names git: {:?}",
+        outcome.stderr()
+    );
+    Ok(())
+}

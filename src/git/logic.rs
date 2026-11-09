@@ -1,6 +1,3 @@
-//! Git access: the change range (union of range diff, working-tree diff and
-//! untracked files), and file contents at the base commit.
-
 use alloc::collections::BTreeMap;
 
 use crate::failure::Failure;
@@ -49,6 +46,25 @@ pub(crate) struct Base {
     pub commit: Text,
 }
 
+/// The commit that stands for `HEAD`: git's own `HEAD` unless `--head` names another.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Head {
+    /// Git's `HEAD`, the commit that is checked out.
+    Current,
+    /// The revision given by `--head REV`.
+    Named(Text),
+}
+
+impl Head {
+    /// The revision that stands for `HEAD`: `HEAD`, or the name given.
+    pub(crate) fn spec(&self) -> Text {
+        match self {
+            Self::Current => Text::of("HEAD"),
+            Self::Named(name) => name.clone(),
+        }
+    }
+}
+
 /// Runs git in the repository root, failing if it exits unsuccessfully.
 fn run_git(root: &Root, args: &Args) -> Result<Bytes, Failure> {
     let captured = process::git(root.path(), args)?;
@@ -78,18 +94,38 @@ fn verified_commit(root: &Root, rev: &Text) -> Result<Text, Failure> {
     Ok(Text::from_string(utf8(&out)?.as_str().trim().to_owned()))
 }
 
-/// Resolves the base commit for `range` and refuses shallow clones.
-pub(crate) fn resolve_base(root: &Root, range: &Text) -> Result<Base, Failure> {
+/// `range` with the `HEAD` it names replaced by the name of `head`: a bare `HEAD`, or
+/// the part after the last `...` (else the last `..`) when that part is `HEAD`. Every
+/// other range is unchanged, and so is every range for `Head::Current`.
+pub(crate) fn with_head(range: &Text, head: &Head) -> Text {
+    match head {
+        Head::Current => range.clone(),
+        Head::Named(name) => match range.as_str().rsplit_once("...") {
+            Some((left, "HEAD")) => Text::from_string(format!("{left}...{}", name.as_str())),
+            Some(_) => range.clone(),
+            None => match range.as_str().rsplit_once("..") {
+                Some((left, "HEAD")) => Text::from_string(format!("{left}..{}", name.as_str())),
+                Some((_, _)) | None if range.as_str() != "HEAD" => range.clone(),
+                Some((_, _)) | None => name.clone(),
+            },
+        },
+    }
+}
+
+/// Resolves the base commit for `range` (after `with_head`) and refuses shallow clones.
+pub(crate) fn resolve_base(root: &Root, range: &Text, head: &Head) -> Result<Base, Failure> {
     let shallow = run_git(root, &Args::of(&["rev-parse", "--is-shallow-repository"]))?;
     if utf8(&shallow)?.as_str().trim() == "true" {
         return Err(Failure::git(&Message::of(
             "shallow clone: fetch full history (the merge base cannot be proven)",
         )));
     }
-    let text = range.as_str();
+    let ranged = with_head(range, head);
+    let spec = head.spec();
+    let text = ranged.as_str();
     let commit = if let Some((left, raw_right)) = text.split_once("...") {
         let right = if raw_right.is_empty() {
-            "HEAD"
+            spec.as_str()
         } else {
             raw_right
         };
@@ -98,7 +134,7 @@ pub(crate) fn resolve_base(root: &Root, range: &Text) -> Result<Base, Failure> {
     } else if let Some((left, _)) = text.split_once("..") {
         verified_commit(root, &Text::of(left))?
     } else {
-        verified_commit(root, range)?
+        verified_commit(root, &ranged)?
     };
     Ok(Base { commit })
 }
@@ -134,7 +170,8 @@ fn parse_name_status(bytes: &Bytes) -> Result<Vec<Change>, Failure> {
 }
 
 /// The union of the range diff, the working-tree diff and untracked files.
-pub(crate) fn changes(root: &Root, range: &Text) -> Result<Vec<Change>, Failure> {
+pub(crate) fn changes(root: &Root, range: &Text, head: &Head) -> Result<Vec<Change>, Failure> {
+    let ranged_spec = with_head(range, head);
     let ranged = parse_name_status(&run_git(
         root,
         &Args::of(&[
@@ -142,12 +179,19 @@ pub(crate) fn changes(root: &Root, range: &Text) -> Result<Vec<Change>, Failure>
             "--name-status",
             "--no-renames",
             "-z",
-            range.as_str(),
+            ranged_spec.as_str(),
         ]),
     )?)?;
+    let head_spec = head.spec();
     let working = parse_name_status(&run_git(
         root,
-        &Args::of(&["diff", "--name-status", "--no-renames", "-z", "HEAD"]),
+        &Args::of(&[
+            "diff",
+            "--name-status",
+            "--no-renames",
+            "-z",
+            head_spec.as_str(),
+        ]),
     )?)?;
     let untracked_raw = run_git(
         root,
