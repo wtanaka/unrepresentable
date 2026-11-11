@@ -626,13 +626,9 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
         run: sh base/policy/stage-sandbox.sh /opt/sandbox --cargo-home "$RUNNER_TEMP/cargo" --head head --bin "$RUNNER_TEMP/tools/cargo-mutants=cargo-mutants" --data "$RUNNER_TEMP/pr.diff=pr.diff"
-      # cargo-mutants runs cargo itself, in the dev profile, in the head copy's
-      # own `target`, so `ci/cargo.sh` (which adds --release) is not used here.
-      # GitHub runners do not use the shared target directory, so no `debug/`
-      # problem arises. cargo-mutants builds once per mutant, and a slower release
-      # build would multiply across every mutant (the job has a 120-minute
-      # timeout). `--cargo-arg=--release` was tried and reverted; revisit only if
-      # the job's build time is measured and release proves faster.
+      # cargo-mutants runs cargo itself, so ci/cargo.sh is not used: pass the
+      # release profile here. --all-features builds optional front ends; without
+      # it their mutants are never compiled and all count as missed.
       - name: cargo mutants --in-diff as an unprivileged user with the network off
         run: |
           set +e
@@ -640,7 +636,8 @@ jobs:
           cd "$SANDBOX_DIR/work/head"
           "$GITHUB_WORKSPACE/base/policy/offline.sh" cargo-mutants mutants \
             --no-config --in-diff "$SANDBOX_DIR/data/pr.diff" --output "$SANDBOX_DIR/mut" \
-            --cargo-arg=--locked --cargo-arg=--offline
+            --cargo-arg=--release --cargo-arg=--locked --cargo-arg=--offline \
+            --all-features
           echo "$?" > "$RUNNER_TEMP/mutants.exit"
       # cargo-mutants writes no mutants.out when it selects no mutant (an empty
       # diff, a diff of comments or test code only). The policy tool believes that
