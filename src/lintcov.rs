@@ -353,11 +353,15 @@ pub(crate) fn load_universe(root: &Root) -> Result<Universe, Failure> {
     let version = run_driver(root, &Args::of(&["--version"]))?;
     let version_text = version.stdout.to_text();
     let found = version_text.as_str().split_whitespace().nth(1);
-    if found != Some(knobs::CLIPPY_VERSION) {
+    let accepted = match found {
+        Some(reported) => knobs::CLIPPY_VERSIONS.contains(&reported),
+        None => false,
+    };
+    if !accepted {
         return Err(Failure::usage(&Message::from_string(format!(
             "unknown clippy version `{}`; this tool knows {}",
             found.into_iter().collect::<String>(),
-            knobs::CLIPPY_VERSION
+            knobs::CLIPPY_VERSIONS.join(", ")
         ))));
     }
     let help = run_driver(root, &Args::of(&["-W", "help"]))?;
@@ -798,7 +802,7 @@ fn check_clippy_toml(root: &Root) -> Result<Vec<Finding>, Failure> {
 
 /// The channel a toolchain file names. `rust-toolchain.toml` is TOML. The legacy
 /// `rust-toolchain` file is TOML only when it has a table or several lines;
-/// otherwise its whole content is the bare channel (`1.98.1`), as rustup reads it.
+/// otherwise its whole content is the bare channel (`1.2.3`), as rustup reads it.
 fn toolchain_channel(path: &RelPath, source: &Source) -> Result<Option<Text>, Failure> {
     let bare = path.as_str() == "rust-toolchain" && source.as_str().trim().lines().count() <= 1;
     if bare {
@@ -841,7 +845,7 @@ pub(crate) fn toolchain_findings(root: &Root) -> Result<Vec<Finding>, Failure> {
                 &RelPath::of(name),
                 Line::new(1),
                 &Message::of(
-                    "rust-toolchain must pin an exact toolchain such as channel = \"1.98.1\"",
+                    "rust-toolchain must pin an exact toolchain such as channel = \"1.2.3\"",
                 ),
             )]
         });

@@ -1,5 +1,6 @@
 //! `clippy.toml` knobs that have a stricter setting than their default, with
-//! the strict value this repository chose, for the pinned clippy version.
+//! the strict value this repository chose, for each clippy version in
+//! [`CLIPPY_VERSIONS`]. Every listed version was reviewed against this table.
 //!
 //! Booleans and enum strings sit at their strict setting. A list whose default
 //! is non-empty must be `[]`, so an absent `ignore-interior-mutability` fails; an
@@ -58,15 +59,15 @@
 //! `unknown field` error of a `clippy.toml` that holds a bogus key.
 //!
 //! A new clippy version needs a human decision: it has new lints and knobs, so
-//! moving the toolchain also means changing [`CLIPPY_VERSION`], this table and
-//! possibly the ledger. Review the table against the configuration documentation
+//! moving the toolchain also means reviewing this table and adding the version
+//! to [`CLIPPY_VERSIONS`], and possibly the ledger. Review the table against the configuration documentation
 //! of each new clippy; editing `rust-toolchain.toml` alone exits 2.
 use crate::toml::Value;
 
 use crate::types::{Answer, Holds as _, Name};
 
-/// The clippy version this table was written for.
-pub(crate) const CLIPPY_VERSION: &str = "0.1.98";
+/// The clippy versions this table was reviewed against; the tool accepts exactly these.
+pub(crate) const CLIPPY_VERSIONS: &[&str] = &["0.1.98", "0.1.99"];
 
 /// Every `clippy.toml` knob with a stricter setting than its default.
 pub(crate) const KNOBS: &[Knob] = &[

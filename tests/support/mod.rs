@@ -652,6 +652,18 @@ fn repo_file(name: &RelPath) -> Result<Message, Fail> {
     Ok(Message::from_string(fs::read_to_string(path)?))
 }
 
+/// The channel this repository pins in `rust-toolchain.toml`, such as `1.98.1`.
+pub(crate) fn pinned_channel() -> Result<Message, Fail> {
+    let toolchain = repo_file(&RelPath::of("rust-toolchain.toml"))?;
+    toolchain
+        .as_str()
+        .lines()
+        .find_map(|line| line.strip_prefix("channel = \""))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .map(Message::of)
+        .ok_or_else(|| Fail::new(Message::of("rust-toolchain.toml has no channel line")))
+}
+
 /// The `[workspace.lints.*]` tables of this repository's root manifest.
 fn lint_tables() -> Result<Message, Fail> {
     let manifest = repo_file(&RelPath::of("Cargo.toml"))?;
@@ -728,13 +740,7 @@ fn spawn(
     dir: &Path,
     programs: Programs<'_>,
 ) -> Result<Output, Fail> {
-    let toolchain = repo_file(&RelPath::of("rust-toolchain.toml"))?;
-    let channel = toolchain
-        .as_str()
-        .lines()
-        .find_map(|line| line.strip_prefix("channel = \""))
-        .and_then(|rest| rest.strip_suffix('"'))
-        .map(OsString::from);
+    let pinned = pinned_channel()?;
     let mut variables: Vec<(&str, OsString)> = vec![
         ("GIT_CONFIG_GLOBAL", OsString::from("/dev/null")),
         ("GIT_CONFIG_SYSTEM", OsString::from("/dev/null")),
@@ -753,9 +759,7 @@ fn spawn(
         // come from cargo, so they do not depend on this.
         variables.push(("CARGO_BUILD_JOBS", OsString::from("1")));
     }
-    if let Some(pinned) = channel {
-        variables.push(("RUSTUP_TOOLCHAIN", pinned));
-    }
+    variables.push(("RUSTUP_TOOLCHAIN", OsString::from(pinned.as_str())));
     if let Some(program_path) = programs.cargo {
         variables.push(("CARGO", program_path.as_os_str().to_owned()));
     }

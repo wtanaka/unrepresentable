@@ -2,7 +2,9 @@
 //! a manifest could make a check pass without the check having run.
 use core::iter::once;
 
-use crate::support::{Answer, Edit, Exit, Fail, Flag, Message, Name, Outcome, RelPath, Sandbox};
+use crate::support::{
+    pinned_channel, Answer, Edit, Exit, Fail, Flag, Message, Name, Outcome, RelPath, Sandbox,
+};
 
 #[cfg(unix)]
 use crate::support::Link;
@@ -691,7 +693,11 @@ fn check_a_legacy_bare_channel_rust_toolchain_file_is_read() -> Result<(), Fail>
         &Sandbox::default_config(&Name::of("fx")),
     )?;
     pinned.remove(&rel!("rust-toolchain.toml"))?;
-    pinned.write(&rel!("rust-toolchain"), &msg!("1.98.1\n"))?;
+    let channel = pinned_channel()?;
+    pinned.write(
+        &rel!("rust-toolchain"),
+        &Message::from_string(format!("{}\n", channel.as_str())),
+    )?;
     let outcome = run_committed(&pinned)?;
     ensure_eq!(
         outcome.exit,
