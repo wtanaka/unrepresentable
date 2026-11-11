@@ -1,6 +1,7 @@
 //! Guards over manifests, lint config and dependency boundaries.
 use crate::support::{
-    check_case, Answer, Edit, Exit, Fail, Flag, Message, Name, Outcome, RelPath, Sandbox,
+    check_case, pinned_channel, Answer, Edit, Exit, Fail, Flag, Message, Name, Outcome, RelPath,
+    Sandbox,
 };
 
 #[cfg(unix)]
@@ -735,11 +736,12 @@ fn lint_coverage_reports_an_unpinned_toolchain() {
 }
 
 fn check_lint_coverage_reports_an_unpinned_toolchain() -> Result<(), Fail> {
+    let pinned = pinned_channel()?;
     let outcome = after_edit(
         &Name::of("guards-toolchain-floating"),
         &Edit {
             file: RelPath::of("rust-toolchain.toml"),
-            from: Message::of("channel = \"1.98.1\""),
+            from: Message::from_string(format!("channel = \"{}\"", pinned.as_str())),
             to: Message::of("channel = \"stable\""),
         },
     )?;
