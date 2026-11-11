@@ -9,7 +9,7 @@ fn main() {
         exit(1);
     } else if num < 2 {
         exit(2);
-    } else {
+    } else { //~ clippy::redundant_else
         exit(3);
     }
 }

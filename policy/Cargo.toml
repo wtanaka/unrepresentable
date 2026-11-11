@@ -2,7 +2,7 @@
 name = "unrepresentable-policy"
 version = "0.0.3-alpha.1"
 edition = "2021"
-rust-version = "1.98"
+rust-version = "1.99"
 description = "Merge-policy automation for the unrepresentable repository: classification, approval, check runs, settings audit."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/wtanaka/unrepresentable"
