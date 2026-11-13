@@ -450,7 +450,7 @@ fn mod_path_attr(attrs_list: &[syn::Attribute]) -> Option<Text> {
             if name_value.path.is_ident("path") {
                 if let Expr::Lit(ExprLit {
                     lit: Lit::Str(text),
-                    ..
+                    attrs: _attrs,
                 }) = &name_value.value
                 {
                     return Some(Text::from_string(text.value()));

@@ -124,14 +124,7 @@ pub(crate) fn on_expanded_meta(
         "derive" => on_derive(scanner, meta),
         _ => {}
     }
-    match meta {
-        Meta::Path(path) | Meta::List(syn::MetaList { path, .. }) => {
-            paths::check_path(scanner, path, Qself::Absent, PathRole::Attr);
-        }
-        Meta::NameValue(name_value) => {
-            paths::check_path(scanner, &name_value.path, Qself::Absent, PathRole::Attr);
-        }
-    }
+    paths::check_path(scanner, meta.path(), Qself::Absent, PathRole::Attr);
 }
 
 /// Flags `Default` in a `#[derive(..)]` (also inside `cfg_attr`) on a struct or union.
@@ -235,7 +228,7 @@ fn on_expect(scanner: &mut Scanner<'_>, meta: &Meta, span: Span) {
             Meta::NameValue(name_value) if name_value.path.is_ident("reason") => {
                 if let Expr::Lit(ExprLit {
                     lit: Lit::Str(text),
-                    ..
+                    attrs: _attrs,
                 }) = &name_value.value
                 {
                     reason_ok = !text.value().trim().is_empty();
