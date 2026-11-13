@@ -120,6 +120,37 @@ fn check_a_baseline_entry_covers_its_finding() -> Result<(), Fail> {
 }
 
 #[test]
+fn an_entry_names_only_the_item_that_holds_the_finding() {
+    assert_eq!(
+        check_an_entry_names_only_the_item_that_holds_the_finding(),
+        Ok(()),
+        "an_entry_names_only_the_item_that_holds_the_finding"
+    );
+}
+
+fn check_an_entry_names_only_the_item_that_holds_the_finding() -> Result<(), Fail> {
+    let sandbox = project(&Name::of("ratchet-sibling"), &with_entry())?;
+    put!(
+        sandbox,
+        "src/main.rs",
+        "fn before() {}\nfn held() {\n    panic!(\"held\");\n}\nfn main() {}\n"
+    )?;
+    start(&sandbox)?;
+    let outcome = sandbox.run(&[against_main()])?;
+    ensure_eq!(
+        outcome.findings(),
+        Vec::<Message>::new(),
+        "an earlier sibling item does not join the label of the later one"
+    );
+    ensure_eq!(
+        outcome.exit,
+        Exit::Clean,
+        "the entry still covers the panic"
+    );
+    Ok(())
+}
+
+#[test]
 fn adding_an_entry_needs_approval() {
     assert_eq!(
         check_adding_an_entry_needs_approval(),

@@ -1,6 +1,6 @@
-use super::{parse, Doc, Entry, KeyPath, Line, SectionKind, Value};
+use super::{parse, Doc, Entry, KeyPath, SectionKind, Value};
 use crate::failure::Failure;
-use crate::types::{Message, Name, RelPath, Source, Text};
+use crate::types::{Line, Message, Name, RelPath, Source, Text};
 
 macro_rules! parsed {
     ($text:expr_2021) => {
