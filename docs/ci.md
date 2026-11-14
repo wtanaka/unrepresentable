@@ -67,7 +67,7 @@ Actions, `fetch-depth: 0`) so that the base ref exists locally, for example
 [Lint coverage and canaries](lint-coverage.md)) and needs:
 
 - a pinned toolchain: `rust-toolchain.toml` with an exact `channel`, for example
-  `channel = "1.98.1"`; a missing or unpinned toolchain is a `lint-coverage`
+  `channel = "1.99.1"`; a missing or unpinned toolchain is a `lint-coverage`
   finding;
 - clippy installed for that toolchain, at the exact version the tool's
   strictest-knob table was written for; an unknown clippy version exits 2.

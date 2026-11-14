@@ -23,7 +23,9 @@
 | `clippy::wildcard_enum_match_arm` | - | syn's enums are `#[non_exhaustive]`, so a wildcard arm is required and cannot name every variant. |
 | `default_overrides_default_fields` | unstable | unstable on the pinned stable toolchain: setting it is an `unknown lint` error. |
 | `deprecated_llvm_intrinsic` | unstable | unstable on the pinned stable toolchain: setting it is an `unknown lint` error. |
+| `duplicate_tools` | unstable | unstable on the pinned stable toolchain: setting it is an `unknown lint` error. |
 | `implicit_provenance_casts` | unstable | unstable on the pinned stable toolchain: setting it is an `unknown lint` error. |
+| `malformed_diagnostic_filters` | unstable | unstable on the pinned stable toolchain: setting it is an `unknown lint` error. |
 | `multiple_supertrait_upcastable` | unstable | unstable on the pinned stable toolchain: setting it is an `unknown lint` error. |
 | `must_not_suspend` | unstable | unstable on the pinned stable toolchain: setting it is an `unknown lint` error. |
 | `non_exhaustive_omitted_patterns` | unstable | unstable on the pinned stable toolchain: setting it is an `unknown lint` error. |

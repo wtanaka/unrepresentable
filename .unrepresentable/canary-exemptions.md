@@ -7,8 +7,8 @@
 | `aarch64_softfloat_neon` | Needs an aarch64 softfloat target (aarch64-unknown-none-softfloat) |
 | `absolute_paths_not_starting_with_crate` | Only fires in edition 2015; canary crate is edition 2021 where ::m::f() is a hard error E0433 |
 | `ambiguous_derive_helpers` | Needs a proc-macro derive crate (extra dependency); a bin crate cannot define or use one without Cargo.toml changes |
-| `ambiguous_glob_imports` | In rustc 1.98 every tried pattern (incl. the lint's own doc example) is a hard error E0659 rather than the lint |
-| `ambiguous_import_visibilities` | Every tried pattern gives hard error E0659 (or no diagnostic) in rustc 1.98 instead of the lint |
+| `ambiguous_glob_imports` | In rustc 1.99 every tried pattern (incl. the lint's own doc example) is a hard error E0659 rather than the lint |
+| `ambiguous_import_visibilities` | Every tried pattern gives hard error E0659 (or no diagnostic) in rustc 1.99 instead of the lint |
 | `anonymous_parameters` | Only fires in edition 2015; trait methods without parameter names are a hard error in edition 2021 |
 | `array_into_iter` | Only fires for editions before 2021; array.into_iter() by-value is the normal behavior in 2021 |
 | `asm_sub_register` | Target-specific (needs asm! with a register class on x86/aarch64) and asm! needs unsafe; not portable across targets |
@@ -20,6 +20,7 @@
 | `clippy::cargo_common_metadata` | cargo group lint about missing Cargo.toml package metadata; its diagnostic points at the manifest, not a Rust source line, so it cannot be marked with //~ |
 | `clippy::cast_slice_from_raw_parts` | fires only on slice::from_raw_parts(..) casts, which require an unsafe block, and the workspace sets unsafe_code = "forbid" |
 | `clippy::crosspointer_transmute` | requires mem::transmute, which needs an unsafe block, and the workspace sets unsafe_code = "forbid" |
+| `clippy::definition_in_module_root` | fires only on definitions in a module root file (mod.rs); a canary is a bin file under canaries/rust/src/bin, which is not one |
 | `clippy::disallowed_fields` | Only fires for fields listed in the disallowed-fields clippy.toml knob, which is not set. |
 | `clippy::disallowed_macros` | Only fires for macros listed in the disallowed-macros clippy.toml knob, which is not set. |
 | `clippy::disallowed_methods` | Only fires for methods listed in the disallowed-methods clippy.toml knob, which is not set. |
@@ -27,14 +28,14 @@
 | `clippy::empty_enums` | Only fires when the unstable never_type feature is enabled (nightly-only). |
 | `clippy::enum_clike_unportable_variant` | Only fires when compiling for a 32-bit target (discriminant overflows 32-bit isize); not triggerable on a 64-bit host. |
 | `clippy::excessive_nesting` | Disabled by default (excessive-nesting-threshold = 0); only fires when that clippy.toml knob is set, which it is not. |
-| `clippy::inefficient_to_string` | Never fires on rustc/clippy 1.98.1: tried .to_string() on &&str, &&String, &&char, &&bool, &&Cow<str>, &&&str; the std ToString specialisation now covers these, so the lint is effectively dead. |
+| `clippy::inefficient_to_string` | Never fires on rustc/clippy 1.99.1: tried .to_string() on &&str, &&String, &&char, &&bool, &&Cow<str>, &&&str; the std ToString specialisation now covers these, so the lint is effectively dead. |
 | `clippy::inline_asm_x86_att_syntax` | Needs asm!/global_asm!, which requires unsafe (workspace has unsafe_code = "forbid", which cannot be overridden) and an x86/x86_64 target. |
 | `clippy::inline_asm_x86_intel_syntax` | Needs asm!/global_asm!, which requires unsafe (workspace has unsafe_code = "forbid", which cannot be overridden) and an x86/x86_64 target. |
 | `clippy::invalid_regex` | Only fires on regex crate constructors (Regex::new, RegexSet::new, ...); the canary crate has no dependencies and Cargo.toml may not be edited. |
 | `clippy::large_include_file` | Needs include_str!/include_bytes! of a file larger than 1,000,000 bytes (max-include-file-size knob); only files under canaries/rust/src/bin/ may be added and none may be that large. |
-| `clippy::let_underscore_lock` | Superseded by the rustc lint let_underscore_lock; on 1.98.1 let _ = mutex.lock() only produces the rustc diagnostic, never the clippy:: one (tried Result and guard-typed initialisers). |
+| `clippy::let_underscore_lock` | Superseded by the rustc lint let_underscore_lock; on 1.99.1 let _ = mutex.lock() only produces the rustc diagnostic, never the clippy:: one (tried Result and guard-typed initialisers). |
 | `clippy::lint_groups_priority` | Only checks the [lints]/[workspace.lints] tables in Cargo.toml (group vs lint priority); it is a manifest condition and cannot fire from a .rs file. |
-| `clippy::macro_use_imports` | Does not fire on 1.98.1 without an external macro crate: tried #[macro_use] use (rustc rejects with unused_attributes) and #[macro_use] extern crate of core/alloc/std; the canary crate has no dependencies. |
+| `clippy::macro_use_imports` | Does not fire on 1.99.1 without an external macro crate: tried #[macro_use] use (rustc rejects with unused_attributes) and #[macro_use] extern crate of core/alloc/std; the canary crate has no dependencies. |
 | `clippy::manual_noop_waker` | Fires on a hand-built Waker::from_raw(RawWaker::new(..)), which is an unsafe call that unsafe_code = "forbid" rejects. |
 | `clippy::mem_replace_with_uninit` | Needs mem::uninitialized()/mem::zeroed() (unsafe, plus deprecated), forbidden by unsafe_code = "forbid". |
 | `clippy::missing_enforced_import_renames` | Only fires when clippy.toml enforced-import-renames is configured, and it is not (knob-only lint). |
@@ -46,7 +47,7 @@
 | `clippy::pointers_in_nomem_asm_block` | Requires an asm! block (unsafe, unstable-arch specific); workspace sets unsafe_code = "forbid" |
 | `clippy::redundant_feature_names` | cargo group lint: fires only on a Cargo.toml manifest condition (feature named like use-x/with-x), not on source |
 | `clippy::redundant_test_prefix` | Only fires on #[test] fns, which exist only under cfg(test); the verification command (cargo clippy --bin NAME) never compiles test cfg |
-| `clippy::ref_binding_to_reference` | Still registered, but in clippy 1.98 its pattern check was folded into needless_borrow: every ref-to-reference pattern is reported with code clippy::needless_borrow ("this pattern creates a reference to a reference"), never with this code (verified with -W on many shapes) |
+| `clippy::ref_binding_to_reference` | Still registered, but its pattern check was folded into needless_borrow: every ref-to-reference pattern is reported with code clippy::needless_borrow ("this pattern creates a reference to a reference"), never with this code (verified with -W on many shapes; still true on clippy 0.1.99) |
 | `clippy::regex_creation_in_loops` | Requires calling regex::Regex::new in a loop; the canary crate has no regex dependency (and Cargo.toml may not be edited) |
 | `clippy::same_length_and_capacity` | Requires an unsafe call (String/Vec::from_raw_parts); workspace sets unsafe_code = "forbid" |
 | `clippy::self_named_module_files` | File-layout lint: needs a mod.rs file, but canaries must be a single src/bin/<name>.rs file |
@@ -80,15 +81,17 @@
 | `missing_gpu_kernel_export_name` | Needs unstable extern "gpu-kernel" ABI (nightly) |
 | `named_asm_labels` | Needs an asm! block, and on x86/x86_64 (x86_64-unknown-linux-gnu, x86_64-apple-darwin) clippy adds `clippy::inline_asm_x86_intel_syntax` (or `inline_asm_x86_att_syntax` with `options(att_syntax)`, both denied) to every asm! block, so no block gives the same diagnostics on aarch64 and on x86; found by a CI run on x86_64 Linux. |
 | `non_fmt_panics` | Only fires in edition 2015/2018; the canary crate is edition 2021 where panic!("{}") is a hard error. |
-| `opaque_hidden_inferred_bound` | Tried the documented nested impl Trait example on rustc 1.98.1; no diagnostic is emitted. |
+| `opaque_hidden_inferred_bound` | Tried the documented nested impl Trait example on rustc 1.99.1; no diagnostic is emitted. |
 | `out_of_scope_macro_calls` | Documented trigger (#[doc = in_root!()] before the macro) is now a hard error "cannot find macro" with no lint code. |
 | `proc_macro_derive_resolution_fallback` | Only relevant to proc-macro crates (manifest proc-macro = true); not triggerable in a plain binary. |
 | `pub_use_of_private_extern_crate` | Emitted with rustc error code E0365 (pub use of a private extern crate), never with the lint name. |
+| `recursion_depth_exceeding_limit` | Reports trait-solver overflow that only the next solver reaches; on stable the same program is the hard error E0275, so no canary can be written. |
 | `rtsan_nonblocking_async` | Needs the unstable #[sanitize(realtime = ...)] attribute; also emits E0658 on stable. |
 | `rust_2021_incompatible_closure_captures` | Edition-migration lint that only fires in editions before 2021; canary crate is edition 2021. |
 | `rust_2021_incompatible_or_patterns` | Edition-migration lint that only fires in editions before 2021; canary crate is edition 2021. |
 | `rust_2021_prefixes_incompatible_syntax` | Edition-migration lint that only fires in editions before 2021; canary crate is edition 2021. |
 | `rust_2021_prelude_collisions` | Edition-migration lint that only fires in editions before 2021; canary crate is edition 2021. |
+| `semicolon_in_expressions_from_non_local_macros` | Fires only for a macro defined in another crate; the canary crate has no dependencies, and the std macros tried (`vec!`, `println!`, `format!`, `dbg!`) do not fire it, so no canary can be written. |
 | `special_module_name` | Only fires for a file-based mod lib;/mod main; resolving to a sibling lib.rs/main.rs, which would be another bin target; inline or #[path] modules do not trigger it. |
 | `stable_features` | Requires #![feature(...)], which on stable also emits E0554. |
 | `trivial_bounds` | Needs #![feature(trivial_bounds)]; on stable false trivial bounds are hard errors (E0277) and true ones emit nothing. |

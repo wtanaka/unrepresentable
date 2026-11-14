@@ -7,7 +7,7 @@ fn main() {
     let num = args().count();
     if num == 1 {
         exit(1);
-    } else { //~ clippy::collapsible_else_if
+    } else { //~ clippy::collapsible_else_if clippy::redundant_else
         if num == 2 {
             exit(2);
         }
