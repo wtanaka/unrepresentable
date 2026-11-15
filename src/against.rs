@@ -404,7 +404,9 @@ pub(crate) fn evaluate(
         if added && scope.is_append_only(path) == Answer::Yes {
             continue;
         }
-        judge_changed = true;
+        if pairs_with_code(&context, change)? == Answer::Yes {
+            judge_changed = true;
+        }
         classify_judge(&context, change, &mut approvals)?;
     }
     approvals.sort();
@@ -950,15 +952,82 @@ fn render_value(value: &Value) -> Text {
     Text::from_string(text)
 }
 
+/// Is a section header the workspace lint tables?
+fn is_lint_header(header: &[Name]) -> Answer {
+    (header.first().map(Name::as_str) == Some("workspace")
+        && header.get(1).map(Name::as_str) == Some("lints"))
+    .answer()
+}
+
+/// Is a section header a dependency table, by position: `[dependencies]` and its
+/// two siblings, `[workspace.dependencies]`, and `[target.<cfg>.dependencies]`,
+/// each optionally followed by a crate name? A segment named `dependencies` in
+/// any other place (`[workspace.metadata.dependencies]`, `[patch.<registry>.dependencies]`)
+/// is not.
+fn is_dependency_header(header: &[Name]) -> Answer {
+    let names: Vec<&str> = header.iter().map(Name::as_str).collect();
+    match names.as_slice() {
+        ["dependencies" | "dev-dependencies" | "build-dependencies", ..]
+        | ["workspace", "dependencies", ..]
+        | ["target", _, "dependencies" | "dev-dependencies" | "build-dependencies", ..] => {
+            Answer::Yes
+        }
+        _ => Answer::No,
+    }
+}
+
+/// Do two versions of a manifest differ only inside dependency tables?
+fn differs_only_in_dependencies(docs: &DocPair<'_>) -> Answer {
+    (render_sections(docs.old, is_dependency_header)
+        == render_sections(docs.new, is_dependency_header))
+    .answer()
+}
+
+/// Does a change to the judge file count toward `judge-code-pairing`?
+///
+/// A modified `Cargo.lock`, and a modified manifest whose only edits are in
+/// dependency tables, do not. A new dependency must be declared before the code
+/// that uses it compiles, and `unused_crate_dependencies` rejects a declaration
+/// that nothing uses yet, so the two have to land in one change. Both still need
+/// approval. Any other edit to a manifest, including its lint tables, pairs; so
+/// does a manifest that does not parse, because it cannot be shown to be a
+/// dependency edit.
+fn pairs_with_code(context: &Context<'_>, change: &Change) -> Result<Answer, Failure> {
+    match change.status {
+        Status::Added | Status::Deleted => return Ok(Answer::Yes),
+        Status::Modified => {}
+    }
+    let name = change.path.as_str();
+    if name == "Cargo.lock" {
+        return Ok(Answer::No);
+    }
+    if name != "Cargo.toml" && !name.ends_with("/Cargo.toml") {
+        return Ok(Answer::Yes);
+    }
+    let old = toml::parse(&change.path, &old_source(context, &change.path)?);
+    let new = toml::parse(&change.path, &context.root.read(&change.path)?);
+    Ok(match (old, new) {
+        (Ok(before), Ok(after)) => match differs_only_in_dependencies(&DocPair {
+            new: &after,
+            old: &before,
+        }) {
+            Answer::Yes => Answer::No,
+            Answer::No => Answer::Yes,
+        },
+        _ => Answer::Yes,
+    })
+}
+
 /// Renders each manifest section as text, skipping the workspace lint tables.
 fn manifest_without_lints(doc: &Doc) -> Vec<Text> {
+    render_sections(doc, is_lint_header)
+}
+
+/// Renders each manifest section as text, skipping the sections whose header `skip` accepts.
+fn render_sections(doc: &Doc, skip: fn(&[Name]) -> Answer) -> Vec<Text> {
     doc.sections
         .iter()
-        .filter(|section| {
-            let workspace = section.header.first().map(Name::as_str) == Some("workspace");
-            let lints = section.header.get(1).map(Name::as_str) == Some("lints");
-            !(workspace && lints)
-        })
+        .filter(|section| skip(&section.header) == Answer::No)
         .map(|section| {
             let header: Vec<&str> = section.header.iter().map(Name::as_str).collect();
             let entries: Vec<String> = section
