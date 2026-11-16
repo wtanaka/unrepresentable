@@ -3,8 +3,8 @@
 This page is the command-line reference for `unrepresentable`.
 
 ```
-unrepresentable check [--against REF | --range RANGE] [--ratchet] <root>
-unrepresentable init [--against REF | --range RANGE] <root>
+unrepresentable check [--against REF | --range RANGE] [--head REV] [--ratchet] <root>
+unrepresentable init [--against REF | --range RANGE] [--head REV] <root>
 unrepresentable self-test [<root>]
 unrepresentable canaries <root>
 ```
@@ -40,6 +40,14 @@ When none is present, the run exits 2. In `A...B`, the base is the merge base of
 `A` and `B`; in `A..B`, the base is `A`. CI must pass `--range` or `--against`
 and must not rely on `default-range` (see
 [Configuration](configuration.md#default-range-is-not-a-trust-anchor)).
+
+### The head
+
+`--head REV` names the commit that stands for `HEAD` in the change range and in
+the working-tree diff. `--against REF` then means `REF...REV`, and a range
+written `X...HEAD`, `X..HEAD` or `HEAD` (from `--range` or `default-range`)
+ends in `REV` instead. The default is `HEAD`. The option exists for a checkout
+whose git `HEAD` is not the commit under review.
 
 `check` also needs:
 

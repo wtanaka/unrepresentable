@@ -25,7 +25,7 @@ use crate::failure::Failure;
 
 use crate::findings::{self, Finding};
 
-use crate::git;
+use crate::git::{self, Head};
 
 use crate::guards;
 
@@ -86,6 +86,8 @@ enum Command {
     Check {
         /// The change to examine.
         change: Change,
+        /// The commit that stands for `HEAD`.
+        head: Head,
         /// Whether to rewrite the baseline first.
         ratchet: Mode,
     },
@@ -93,6 +95,8 @@ enum Command {
     Init {
         /// The change whose base must not hold a config.
         change: Change,
+        /// The commit that stands for `HEAD`.
+        head: Head,
     },
     /// `self-test`: the built-in canaries.
     SelfTest,
@@ -194,9 +198,20 @@ fn with_change_args(command: ClapCommand) -> ClapCommand {
         )
 }
 
+/// Adds the `--head REV` that names the commit standing for `HEAD` to `command`.
+fn with_head_arg(command: ClapCommand) -> ClapCommand {
+    command.arg(
+        Arg::new("head")
+            .long("head")
+            .value_name("REV")
+            .value_parser(StringValueParser::new().map(Text::from_string))
+            .help("Revision that stands for HEAD in the range and the working-tree diff"),
+    )
+}
+
 /// The `check` subcommand.
 fn check_command() -> ClapCommand {
-    with_change_args(
+    with_head_arg(with_change_args(
         ClapCommand::new("check")
             .about("Run all checks over a change range and apply the baseline")
             .arg(
@@ -205,16 +220,15 @@ fn check_command() -> ClapCommand {
                     .action(ArgAction::SetTrue)
                     .help("Rewrite the baseline to drop stale entries first"),
             ),
-    )
+    ))
     .arg(root_arg(Presence::Required))
 }
 
 /// The `init` subcommand.
 fn init_command() -> ClapCommand {
-    with_change_args(
-        ClapCommand::new("init")
-            .about("Write a config with a baseline of current findings and stub ledgers"),
-    )
+    with_head_arg(with_change_args(ClapCommand::new("init").about(
+        "Write a config with a baseline of current findings and stub ledgers",
+    )))
     .arg(root_arg(Presence::Required))
 }
 
@@ -271,6 +285,14 @@ fn change_of(matches: &ArgMatches) -> Result<Change, Failure> {
     }
 }
 
+/// The `--head REV` given, else the current `HEAD`.
+fn head_of(matches: &ArgMatches) -> Result<Head, Failure> {
+    match text_of(matches.try_get_one::<Text>("head"))? {
+        Some(rev) => Ok(Head::Named(rev)),
+        None => Ok(Head::Current),
+    }
+}
+
 /// The workspace root of a subcommand.
 fn root_of(matches: &ArgMatches) -> Result<PathBuf, Failure> {
     match matches.try_get_one::<PathBuf>("root") {
@@ -316,6 +338,7 @@ fn parse_args(args: Vec<OsString>) -> Result<Parsed, Failure> {
         Some(("check", sub)) => (
             Command::Check {
                 change: change_of(sub)?,
+                head: head_of(sub)?,
                 ratchet: ratchet_of(sub)?,
             },
             root_of(sub)?,
@@ -323,6 +346,7 @@ fn parse_args(args: Vec<OsString>) -> Result<Parsed, Failure> {
         Some(("init", sub)) => (
             Command::Init {
                 change: change_of(sub)?,
+                head: head_of(sub)?,
             },
             root_of(sub)?,
         ),
@@ -388,7 +412,8 @@ fn collect(root: &Root, config: &Config, ws: &Workspace) -> Result<Raw, Failure>
 }
 
 /// The change range of `check`: `--range`, else `--against REF` (as `REF...HEAD`), else
-/// `default-range`, else exit 2.
+/// `default-range`, else exit 2. `--head REV` replaces the `HEAD` of the range that is
+/// used, whichever it came from.
 ///
 /// A run never falls back to scanning without a range. No range would mean no
 /// judge or pairing check, and a pass that skipped a check is what this tool
@@ -403,8 +428,13 @@ fn collect(root: &Root, config: &Config, ws: &Workspace) -> Result<Raw, Failure>
 /// base: the value used is the `default-range` of the config at that base (the
 /// written one when the base has none), and `check` refuses a config range that
 /// selects no changes at all.
-fn determine_range(root: &Root, change: &Change, config: &Config) -> Result<Chosen, Failure> {
-    if let Some(range) = explicit_range(change) {
+fn determine_range(
+    root: &Root,
+    change: &Change,
+    config: &Config,
+    head: &Head,
+) -> Result<Chosen, Failure> {
+    if let Some(range) = explicit_range(change, head) {
         return Ok(Chosen {
             origin: Origin::Command,
             range,
@@ -415,7 +445,7 @@ fn determine_range(root: &Root, change: &Change, config: &Config) -> Result<Chos
             "no change range: pass --against REF or --range RANGE, or set default-range in .unrepresentable/config",
         )));
     };
-    let base = git::resolve_base(root, written)?;
+    let base = git::resolve_base(root, written, head)?;
     let trusted = against::base_config(root, &base)?;
     let range = match trusted.default_range {
         Some(at_base) => at_base,
@@ -423,19 +453,21 @@ fn determine_range(root: &Root, change: &Change, config: &Config) -> Result<Chos
     };
     Ok(Chosen {
         origin: Origin::Config,
-        range,
+        range: git::with_head(&range, head),
     })
 }
 
 /// The range named on the command line: `--range` as written, `--against REF`
-/// as `REF...HEAD`.
+/// as `REF...HEAD`. Both take `--head REV` in place of `HEAD`.
 #[must_use]
-fn explicit_range(change: &Change) -> Option<Text> {
+fn explicit_range(change: &Change, head: &Head) -> Option<Text> {
     match change {
-        Change::Range(range) => Some(range.clone()),
-        Change::Against(reference) => {
-            Some(Text::from_string(format!("{}...HEAD", reference.as_str())))
-        }
+        Change::Range(range) => Some(git::with_head(range, head)),
+        Change::Against(reference) => Some(Text::from_string(format!(
+            "{}...{}",
+            reference.as_str(),
+            head.spec().as_str()
+        ))),
         Change::Unspecified => None,
     }
 }
@@ -468,14 +500,18 @@ pub(crate) fn run(args: Vec<OsString>) -> Result<ExitStatus, Failure> {
     let root = Root::new(options.root);
     match options.command {
         Command::Canaries => run_canaries(&root),
-        Command::Check { change, ratchet } => check(&root, &change, ratchet),
-        Command::Init { change } => init(&root, &change),
+        Command::Check {
+            change,
+            head,
+            ratchet,
+        } => check(&root, &change, &head, ratchet),
+        Command::Init { change, head } => init(&root, &change, &head),
         Command::SelfTest => print_canary_findings(&selftest::run()?),
     }
 }
 
 /// `check`: runs all checks, applies the baseline and the change range.
-fn check(root: &Root, change: &Change, ratchet: Mode) -> Result<ExitStatus, Failure> {
+fn check(root: &Root, change: &Change, head: &Head, ratchet: Mode) -> Result<ExitStatus, Failure> {
     let config_path = RelPath::of(CONFIG_FILE);
     let mut config = config::parse(&config_path, &root.read(&config_path)?)?;
     let ws = Workspace::load(root)?;
@@ -494,10 +530,10 @@ fn check(root: &Root, change: &Change, ratchet: Mode) -> Result<ExitStatus, Fail
     let applied = baseline::apply(&config, &raw.findings)?;
     let mut all_findings = applied.remaining;
     all_findings.extend(applied.baseline_findings);
-    let chosen = determine_range(root, change, &config)?;
+    let chosen = determine_range(root, change, &config, head)?;
     let range = chosen.range;
-    let base = git::resolve_base(root, &range)?;
-    let changes = git::changes(root, &range)?;
+    let base = git::resolve_base(root, &range, head)?;
+    let changes = git::changes(root, &range, head)?;
     match (chosen.origin, changes.is_empty()) {
         (Origin::Config, true) => {
             return Err(Failure::usage(&Message::from_string(format!(
@@ -605,15 +641,15 @@ fn rewrite_baseline(root: &Root, entries: &[baseline::Fingerprint]) -> Result<()
 }
 
 /// `init` refuses to overwrite a config, here or at the base of the range.
-fn init_preconditions(root: &Root, change: &Change) -> Result<(), Failure> {
+fn init_preconditions(root: &Root, change: &Change, head: &Head) -> Result<(), Failure> {
     let config_path = RelPath::of(CONFIG_FILE);
     if root.is_file(&config_path) == Answer::Yes {
         return Err(Failure::usage(&Message::of(
             "the config file .unrepresentable/config already exists; init refuses to overwrite it",
         )));
     }
-    if let Some(range) = explicit_range(change) {
-        let base = git::resolve_base(root, &range)?;
+    if let Some(range) = explicit_range(change, head) {
+        let base = git::resolve_base(root, &range, head)?;
         if git::exists_at(root, &base, &config_path) == Answer::Yes {
             return Err(Failure::usage(&Message::of(
                 "the config file .unrepresentable/config exists at the base ref; init is refused",
@@ -661,9 +697,9 @@ fn init_code_line(ws: &Workspace) -> Text {
 }
 
 /// Runs `init`: writes a config with a baseline of current findings and stub ledgers.
-fn init(root: &Root, change: &Change) -> Result<ExitStatus, Failure> {
+fn init(root: &Root, change: &Change, head: &Head) -> Result<ExitStatus, Failure> {
     let config_path = RelPath::of(CONFIG_FILE);
-    init_preconditions(root, change)?;
+    init_preconditions(root, change, head)?;
     let ws = Workspace::load(root)?;
     let mut text = String::from(
         "# unrepresentable configuration: facts about the project and recorded exceptions.\n# Every rule is on. There is no option to turn one off.\n\nbaseline = \"shrink-only\"\n",
