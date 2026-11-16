@@ -805,6 +805,64 @@ fn check_removing_and_lowering_lints_is_escalated_and_reported() -> Result<(), F
 }
 
 #[test]
+fn a_lint_table_edit_is_not_a_manifest_change_outside_the_lint_tables() {
+    assert_eq!(
+        check_a_lint_table_edit_is_not_a_manifest_change_outside_the_lint_tables(),
+        Ok(()),
+        "a_lint_table_edit_is_not_a_manifest_change_outside_the_lint_tables"
+    );
+}
+
+fn check_a_lint_table_edit_is_not_a_manifest_change_outside_the_lint_tables() -> Result<(), Fail> {
+    let sandbox = project(&Name::of("against-lint-table-only"))?;
+    sandbox.edit(&Edit {
+        file: RelPath::of("Cargo.toml"),
+        from: Message::of("cargo = { level = \"deny\", priority = -1 }"),
+        to: Message::of("cargo = { level = \"deny\", priority = -2 }"),
+    })?;
+    let outcome = committed(&sandbox)?;
+    ensure!(
+        outcome.has_approval(&msg!("LINT_PRIORITY_CHANGED clippy::cargo")) == Answer::Yes,
+        "the lint table edit is reported as such: {:?}",
+        outcome.approvals()
+    );
+    ensure!(
+        outcome.has_approval(&msg!(
+            "ROOT_MANIFEST_CHANGED Cargo.toml (outside the lint tables)"
+        )) == Answer::No,
+        "a lint table edit is not an edit outside the lint tables: {:?}",
+        outcome.approvals()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_workspace_table_that_is_not_the_lint_tables_is_a_manifest_change() {
+    assert_eq!(
+        check_a_workspace_table_that_is_not_the_lint_tables_is_a_manifest_change(),
+        Ok(()),
+        "a_workspace_table_that_is_not_the_lint_tables_is_a_manifest_change"
+    );
+}
+
+fn check_a_workspace_table_that_is_not_the_lint_tables_is_a_manifest_change() -> Result<(), Fail> {
+    let sandbox = project(&Name::of("against-workspace-metadata"))?;
+    sandbox.append(
+        &rel!("Cargo.toml"),
+        &Message::of("\n[workspace.metadata.fx]\nnote = \"x\"\n"),
+    )?;
+    let outcome = committed(&sandbox)?;
+    ensure!(
+        outcome.has_approval(&msg!(
+            "ROOT_MANIFEST_CHANGED Cargo.toml (outside the lint tables)"
+        )) == Answer::Yes,
+        "a workspace table other than the lint tables is reported: {:?}",
+        outcome.approvals()
+    );
+    Ok(())
+}
+
+#[test]
 fn loosening_clippy_toml_is_escalated() {
     assert_eq!(
         check_loosening_clippy_toml_is_escalated(),
@@ -1042,6 +1100,246 @@ fn check_a_member_manifest_edit_needs_approval() -> Result<(), Fail> {
             == Answer::Yes,
         "the member manifest is named: {:?}",
         outcome.approvals()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_dependency_edit_may_land_beside_the_code_that_uses_it() {
+    assert_eq!(
+        check_a_dependency_edit_may_land_beside_the_code_that_uses_it(),
+        Ok(()),
+        "a_dependency_edit_may_land_beside_the_code_that_uses_it"
+    );
+}
+
+fn check_a_dependency_edit_may_land_beside_the_code_that_uses_it() -> Result<(), Fail> {
+    let sandbox = Sandbox::create(&Name::of("against-dependency-pairing"))?;
+    sandbox.seed(&Name::of("fx"), &Message::of(BASE_CONFIG))?;
+    put!(sandbox, "src/main.rs", "fn main() {}\n")?;
+    put!(
+        sandbox,
+        "crates/inner/Cargo.toml",
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n"
+    )?;
+    sandbox.init_repo()?;
+    sandbox.git(&Message::of("checkout -q -b work"))?;
+    sandbox.append(
+        &rel!("crates/inner/Cargo.toml"),
+        &Message::of("\n[dependencies]\nsome-crate = \"1\"\n"),
+    )?;
+    sandbox.append(&rel!("Cargo.lock"), &Message::of("# touched\n"))?;
+    put!(sandbox, "src/main.rs", "fn main() {}\nfn extra() {}\n")?;
+    let outcome = committed(&sandbox)?;
+    ensure_eq!(
+        outcome.exit,
+        Exit::Approval,
+        "a dependency edit beside code needs a human, not a split"
+    );
+    for expected in [
+        "MEMBER_MANIFEST_CHANGED crates/inner/Cargo.toml",
+        "DEPENDENCY_CHANGED Cargo.lock",
+    ] {
+        ensure!(
+            outcome.has_approval(&msg!(expected)) == Answer::Yes,
+            "{expected} is still reported: {:?}",
+            outcome.approvals()
+        );
+    }
+    Ok(())
+}
+
+/// Runs the pairing check on `sandbox` after one code edit beside its pending edits.
+fn beside_code(sandbox: &Sandbox) -> Result<Outcome, Fail> {
+    put!(sandbox, "src/main.rs", "fn main() {}\nfn extra() {}\n")?;
+    committed(sandbox)
+}
+
+/// Is the pairing finding among the findings of `outcome`?
+fn pairs(outcome: &Outcome) -> Answer {
+    outcome.has_rule_in(
+        &rel!(".unrepresentable/config"),
+        &Name::of("judge-code-pairing"),
+    )
+}
+
+#[test]
+fn every_dependency_table_of_the_root_manifest_may_land_beside_code() {
+    assert_eq!(
+        check_every_dependency_table_of_the_root_manifest_may_land_beside_code(),
+        Ok(()),
+        "every_dependency_table_of_the_root_manifest_may_land_beside_code"
+    );
+}
+
+fn check_every_dependency_table_of_the_root_manifest_may_land_beside_code() -> Result<(), Fail> {
+    let sandbox = project(&Name::of("against-root-dependencies"))?;
+    sandbox.append(
+        &rel!("Cargo.toml"),
+        &Message::of(
+            "\n[dependencies]\na = \"1\"\n\n[dev-dependencies]\nb = \"1\"\n\n[build-dependencies]\nc = \"1\"\n\n[workspace.dependencies]\nd = \"1\"\n\n[target.'cfg(unix)'.dependencies]\ne = \"1\"\n\n[dependencies.f]\nversion = \"1\"\n",
+        ),
+    )?;
+    let outcome = beside_code(&sandbox)?;
+    ensure!(
+        pairs(&outcome) == Answer::No,
+        "dependency tables do not pair: {:?}",
+        outcome.findings()
+    );
+    ensure!(
+        outcome.has_approval(&msg!(
+            "ROOT_MANIFEST_CHANGED Cargo.toml (outside the lint tables)"
+        )) == Answer::Yes,
+        "the edit still needs approval: {:?}",
+        outcome.approvals()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_lockfile_edit_beside_code_does_not_pair() {
+    assert_eq!(
+        check_a_lockfile_edit_beside_code_does_not_pair(),
+        Ok(()),
+        "a_lockfile_edit_beside_code_does_not_pair"
+    );
+}
+
+fn check_a_lockfile_edit_beside_code_does_not_pair() -> Result<(), Fail> {
+    let sandbox = project(&Name::of("against-lockfile-pairing"))?;
+    sandbox.append(&rel!("Cargo.lock"), &Message::of("# touched\n"))?;
+    let outcome = beside_code(&sandbox)?;
+    ensure_eq!(outcome.exit, Exit::Approval, "approval, not a finding");
+    ensure!(
+        outcome.has_approval(&msg!("DEPENDENCY_CHANGED Cargo.lock")) == Answer::Yes,
+        "the lockfile edit still needs approval: {:?}",
+        outcome.approvals()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_dependencies_segment_elsewhere_is_not_a_dependency_table() {
+    assert_eq!(
+        check_a_dependencies_segment_elsewhere_is_not_a_dependency_table(),
+        Ok(()),
+        "a_dependencies_segment_elsewhere_is_not_a_dependency_table"
+    );
+}
+
+fn check_a_dependencies_segment_elsewhere_is_not_a_dependency_table() -> Result<(), Fail> {
+    for (index, header) in [
+        "workspace.metadata.dependencies",
+        "patch.crates-io.dependencies",
+        "profile.release.package.dependencies",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let sandbox = project(&Name::of(&format!("against-fake-dependencies-{index}")))?;
+        sandbox.append(
+            &rel!("Cargo.toml"),
+            &Message::from_string(format!("\n[{header}]\nx = 1\n")),
+        )?;
+        let outcome = beside_code(&sandbox)?;
+        ensure!(
+            pairs(&outcome) == Answer::Yes,
+            "[{header}] pairs: {:?}",
+            outcome.findings()
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn an_added_member_manifest_beside_code_still_pairs() {
+    assert_eq!(
+        check_an_added_member_manifest_beside_code_still_pairs(),
+        Ok(()),
+        "an_added_member_manifest_beside_code_still_pairs"
+    );
+}
+
+fn check_an_added_member_manifest_beside_code_still_pairs() -> Result<(), Fail> {
+    let sandbox = project(&Name::of("against-added-manifest-pairing"))?;
+    put!(
+        sandbox,
+        "crates/extra/Cargo.toml",
+        "[package]\nname = \"extra\"\nversion = \"0.1.0\"\n"
+    )?;
+    let outcome = beside_code(&sandbox)?;
+    ensure!(
+        pairs(&outcome) == Answer::Yes,
+        "an added manifest pairs: {:?}",
+        outcome.findings()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_member_manifest_that_does_not_parse_pairs_instead_of_failing() {
+    assert_eq!(
+        check_a_member_manifest_that_does_not_parse_pairs_instead_of_failing(),
+        Ok(()),
+        "a_member_manifest_that_does_not_parse_pairs_instead_of_failing"
+    );
+}
+
+fn check_a_member_manifest_that_does_not_parse_pairs_instead_of_failing() -> Result<(), Fail> {
+    let sandbox = Sandbox::create(&Name::of("against-broken-member-manifest"))?;
+    sandbox.seed(&Name::of("fx"), &Message::of(BASE_CONFIG))?;
+    put!(sandbox, "src/main.rs", "fn main() {}\n")?;
+    put!(
+        sandbox,
+        "crates/inner/Cargo.toml",
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n"
+    )?;
+    sandbox.init_repo()?;
+    sandbox.git(&Message::of("checkout -q -b work"))?;
+    sandbox.append(
+        &rel!("crates/inner/Cargo.toml"),
+        &Message::of("\n[dependencies\n"),
+    )?;
+    let outcome = beside_code(&sandbox)?;
+    ensure_eq!(
+        outcome.exit,
+        Exit::Findings,
+        "a pairing finding, not a crash"
+    );
+    ensure!(
+        pairs(&outcome) == Answer::Yes,
+        "a broken manifest pairs: {:?}",
+        outcome.findings()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_non_dependency_manifest_edit_beside_code_is_still_a_finding() {
+    assert_eq!(
+        check_a_non_dependency_manifest_edit_beside_code_is_still_a_finding(),
+        Ok(()),
+        "a_non_dependency_manifest_edit_beside_code_is_still_a_finding"
+    );
+}
+
+fn check_a_non_dependency_manifest_edit_beside_code_is_still_a_finding() -> Result<(), Fail> {
+    let sandbox = project(&Name::of("against-manifest-pairing"))?;
+    sandbox.edit(&Edit {
+        file: RelPath::of("Cargo.toml"),
+        from: Message::of("edition = \"2021\"\n"),
+        to: Message::of("edition = \"2021\"\ndescription = \"changed\"\n"),
+    })?;
+    put!(sandbox, "src/main.rs", "fn main() {}\nfn extra() {}\n")?;
+    let outcome = committed(&sandbox)?;
+    ensure_eq!(outcome.exit, Exit::Findings, "mixed changes are findings");
+    ensure!(
+        outcome.has_rule_in(
+            &rel!(".unrepresentable/config"),
+            &Name::of("judge-code-pairing")
+        ) == Answer::Yes,
+        "a manifest edit outside the dependency tables pairs: {:?}",
+        outcome.findings()
     );
     Ok(())
 }

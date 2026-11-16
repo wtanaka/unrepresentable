@@ -23,7 +23,13 @@ _baseline_ is the list of existing findings that are accepted
 - `check --against` / `check --range` classify every changed path. A change that
   tightens a check needs no approval; a change that loosens a check or adds an
   exception exits 3. Judge files and code files must not change in the same
-  change (`judge-code-pairing`). The built-in judge paths (`ALWAYS_JUDGE` in
+  change (`judge-code-pairing`), except that a modified `Cargo.lock`, or a
+  modified manifest whose edits are all in dependency tables (`[dependencies]`,
+  `[dev-dependencies]`, `[build-dependencies]`, `[workspace.dependencies]`,
+  `[target.<cfg>.<kind>]`), does not count: `unused_crate_dependencies` rejects a
+  dependency before its first use, so the two must land together. Those edits
+  still exit 3. An added or deleted manifest, or one that does not parse, still
+  pairs. The built-in judge paths (`ALWAYS_JUDGE` in
   `src/against.rs`) are, at the repository root only, `.unrepresentable/**`,
   `rust-toolchain`, `rust-toolchain.toml`, `Cargo.lock`, `.github/**` and
   `ci/unrepresentable.sh`; and, at the root or in any directory, `clippy.toml`,
