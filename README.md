@@ -56,7 +56,7 @@ authoring ergonomics.
 ## Quickstart
 
 ```sh
-cargo install unrepresentable --locked --version =0.0.4-alpha.1
+cargo install unrepresentable --locked --version =0.0.5-alpha.1
 unrepresentable self-test
 ```
 
